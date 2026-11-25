@@ -7,7 +7,7 @@ const {
   sb, sbAuth, emailFor, sha, hashSecret, verifySecret,
   nowInTz, photoUrl, extractStoragePath, uploadDataUrl, seedDemo
 } = require('./supabase');
-const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ljilybiftodjlicnrxta.supabase.co';
 
 const ROOT = path.join(__dirname, '..');
 const PORT = process.env.PORT || 3000;

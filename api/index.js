@@ -11,7 +11,7 @@ try {
 
 module.exports = async (req, res) => {
   if (loadError || !server) {
-    const missing = ['SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY'].filter(k => !process.env[k]);
+    const missing = ['SUPABASE_SECRET_KEY'].filter(k => !process.env[k]);
     res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({
       error: missing.length

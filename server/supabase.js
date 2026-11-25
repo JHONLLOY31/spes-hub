@@ -13,13 +13,13 @@ if (!process.env.SUPABASE_URL && fs.existsSync(envPath)) {
   }
 }
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ljilybiftodjlicnrxta.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_2GKqY_cNgSya-zrsjL_u9g_DLTydGNY';
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 const TZ_NAME = process.env.TZ_NAME || 'Asia/Manila';
 
-if (!SUPABASE_URL || !SUPABASE_SECRET_KEY || !SUPABASE_PUBLISHABLE_KEY) {
-  throw new Error('Missing SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, or SUPABASE_SECRET_KEY in server/.env');
+if (!SUPABASE_SECRET_KEY) {
+  throw new Error('Missing SUPABASE_SECRET_KEY in environment variables');
 }
 
 const opts = { auth: { persistSession: false, autoRefreshToken: false } };
