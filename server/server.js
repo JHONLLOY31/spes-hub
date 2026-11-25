@@ -12,7 +12,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const ROOT = path.join(__dirname, '..');
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
-const SECURE = process.env.SECURE_COOKIES === '1' || process.env.RENDER === 'true';
+const SECURE = process.env.SECURE_COOKIES === '1' || process.env.RENDER === 'true' || process.env.VERCEL === '1';
 const WEEK_SEC = 7 * 24 * 3600;
 
 const str = (v, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
@@ -168,7 +168,8 @@ route('POST', '/api/login', undefined, async ({ req, body }) => {
   const username = str(body.username, 60);
   const password = typeof body.password === 'string' ? body.password : '';
   const portal = body.portal === 'admin' ? 'admin' : 'user';
-  const key = `${req.socket.remoteAddress}|${username.toLowerCase()}`;
+  const ip = String(req.headers['x-forwarded-for'] || (req.socket && req.socket.remoteAddress) || 'unknown').split(',')[0].trim();
+  const key = `${ip}|${username.toLowerCase()}`;
   const f = fails.get(key);
   if (f && f.n >= 5 && f.until > Date.now()) fail(429, 'Too many attempts. Please try again in a few minutes.');
 
@@ -708,11 +709,18 @@ route('POST', '/api/answerkey', ['admin'], async ({ user, body }) => {
 });
 
 // ---- Request handling ----
-const readJson = req => new Promise((ok, bad) => {
-  const parts = []; let n = 0;
-  req.on('data', c => { n += c.length; if (n > 8e6) { bad({ status: 413, msg: 'Request too large.' }); req.destroy(); } else parts.push(c); });
-  req.on('end', () => { try { ok(JSON.parse(Buffer.concat(parts).toString() || '{}')); } catch { bad({ status: 400, msg: 'Invalid JSON.' }); } });
-});
+const readJson = req => {
+  if (req.body && typeof req.body === 'object') return Promise.resolve(req.body);
+  if (typeof req.body === 'string') {
+    try { return Promise.resolve(JSON.parse(req.body || '{}')); }
+    catch { return Promise.reject({ status: 400, msg: 'Invalid JSON.' }); }
+  }
+  return new Promise((ok, bad) => {
+    const parts = []; let n = 0;
+    req.on('data', c => { n += c.length; if (n > 8e6) { bad({ status: 413, msg: 'Request too large.' }); req.destroy(); } else parts.push(c); });
+    req.on('end', () => { try { ok(JSON.parse(Buffer.concat(parts).toString() || '{}')); } catch { bad({ status: 400, msg: 'Invalid JSON.' }); } });
+  });
+};
 const send = (res, code, obj, headers = {}) => {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers });
   res.end(JSON.stringify(obj));
@@ -757,7 +765,7 @@ function serveStatic(req, res, url) {
   });
 }
 
-const server = http.createServer(async (req, res) => {
+async function handleRequest(req, res) {
   try {
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname.startsWith('/api/')) await api(req, res, url);
@@ -767,7 +775,10 @@ const server = http.createServer(async (req, res) => {
     if (status === 500) console.error(e);
     send(res, status, { error: e.msg || 'Something went wrong on the server.' });
   }
-});
+}
+
+const server = http.createServer(handleRequest);
+server.handler = handleRequest;
 
 module.exports = server;
 if (require.main === module) {
