@@ -649,6 +649,72 @@ route('POST', '/api/attendance/manual', ['admin'], async ({ user, body }) => {
   return [201, { added: true, period }];
 });
 
+// Admin QR Scanner: instant auto-approved attendance without separate photo approval
+route('POST', '/api/attendance/qr-scan', ['admin'], async ({ user, body }) => {
+  const raw = str(body.code, 200);
+  if (!raw) fail(400, 'Empty QR code.');
+  const now = nowInTz();
+  const date = now.date;
+  if (isRestDay(date)) fail(400, 'Saturday and Sunday are rest days.');
+  if (isWorkFromHome(date)) fail(400, 'Friday is work from home. Attendance is not required.');
+
+  // Parse SPESQR:<spesId>:<userId> or fallback to SPES ID lookup
+  let target = null;
+  if (raw.startsWith('SPESQR:')) {
+    const parts = raw.split(':');
+    const uid = parts[2] || '';
+    if (uid) {
+      const { data } = await sb.from('profiles').select('*').eq('id', uid).eq('role', 'beneficiary').maybeSingle();
+      target = data;
+    }
+  }
+  if (!target) {
+    const { data } = await sb.from('profiles').select('*').ilike('spes_id', raw).eq('role', 'beneficiary').maybeSingle();
+    target = data;
+  }
+  if (!target) fail(404, 'QR code not recognized. No matching SPES beneficiary found.');
+  if (target.status !== 'approved') fail(403, `${target.name}'s account is not approved yet.`);
+
+  // Auto-select slot by Manila time if 'AUTO' or omitted, or use Admin-chosen slot
+  let slot = body.slot && SLOTS[body.slot] ? body.slot : null;
+  if (!slot) {
+    if (now.mins < 720) slot = 'AM_IN';
+    else if (now.mins < 750) slot = 'AM_OUT';
+    else if (now.mins < 1020) slot = 'PM_IN';
+    else slot = 'PM_OUT';
+  }
+  const s = SLOTS[slot];
+
+  const { data: dup } = await sb.from('attendance').select('id').eq('user_id', target.id).eq('date', date).eq('slot', slot).maybeSingle();
+  if (dup) fail(409, `${target.name} already recorded ${s.label} for today.`);
+
+  const lateMinutes = s.lateAfter !== null ? Math.max(0, now.mins - s.lateAfter) : 0;
+  const onTime = lateMinutes === 0;
+  const deducted = lateMinutes > 0 ? lateMinutes * 2 : 0;
+  if (deducted > 0) await awardPoints(target.id, -deducted);
+
+  const { data, error } = await sb.from('attendance').insert({
+    user_id: target.id, slot, date, photo_path: null,
+    submitted_at: now.iso, on_time: onTime, late_minutes: lateMinutes,
+    points_deducted: deducted, status: 'approved',
+    reviewed_by: `QR Scan (${user.name})`, reviewed_at: now.iso
+  }).select().single();
+  if (error) fail(500, 'Could not record QR attendance: ' + error.message);
+
+  const msg = deducted > 0
+    ? `QR Attendance recorded: ${s.label} — Approved (Late ${lateMinutes} min · −${deducted} pts).`
+    : `QR Attendance recorded: ${s.label} — Approved (On time).`;
+  await pushNotif(target.id, msg, 'attendance');
+  await logActivity(target.id, `QR Attendance: ${s.label}${lateMinutes ? ` (Late ${lateMinutes}m)` : ''}`);
+  return [201, {
+    record: mapAttendance(data),
+    beneficiary: mapProfile(target),
+    slotLabel: s.label,
+    lateMinutes,
+    pointsDeducted: deducted
+  }];
+});
+
 // ---- Attendance Excuses + Automatic +1 Make-Up Day ----
 route('POST', '/api/attendance/excuse', ['beneficiary'], async ({ user, body }) => {
   const now = nowInTz();

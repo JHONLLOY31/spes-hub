@@ -6,7 +6,7 @@ SPES.App = {
   TABS: {
     beneficiary: ['dashboard', 'attendance', 'journal', 'messages', 'calendar', 'games', 'board', 'badges', 'notifs', 'profile', 'settings'],
     head: ['dashboard', 'personal', 'accounts', 'journals', 'board', 'answers', 'calendar', 'notifs', 'profile', 'settings'],
-    admin: ['dashboard', 'approvals', 'review', 'journals', 'messages', 'admin', 'announce', 'feedback', 'calendar', 'board', 'notifs', 'profile', 'settings']
+    admin: ['dashboard', 'approvals', 'review', 'qrscan', 'journals', 'messages', 'admin', 'announce', 'feedback', 'calendar', 'board', 'notifs', 'profile', 'settings']
   },
 
   async init() {
@@ -95,6 +95,7 @@ SPES.App = {
     root.addEventListener('change', e => {
       const i = e.target, u = this.user();
       if (i.dataset.act === 'board') { this.s.board = i.value; this.render(); }
+      else if (i.dataset.act === 'qrslot') { this.s.qrSlot = i.value; }
       else if (i.dataset.act === 'lang') { this.pref('lang', i.value); }
       else if (i.classList.contains('pick')) { i.closest('form').querySelector('.pv').innerHTML = i.files[0] ? `<img class="thumb" src="${URL.createObjectURL(i.files[0])}" alt="Preview">` : ''; }
       else if (i.classList.contains('jpick')) this.addPics([...i.files]).then(() => { i.value = ''; });
@@ -315,11 +316,30 @@ SPES.App = {
     }, 550);
   },
   go(tab) {
+    if (SPES.QrView) SPES.QrView.stopCamera();
     this.anim = true;
     Object.assign(this.s, { tab, m: null, play: null, cert: false, room: null, pisBatch: null, pisUser: null, pisQ: '', keyOpen: 0, keyMode: '' });
     this.render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     this.syncBg();
+  },
+
+  async submitQrScan(code) {
+    if (SPES.QrView) SPES.QrView._busy = true;
+    const slot = this.s.qrSlot && this.s.qrSlot !== 'AUTO' ? this.s.qrSlot : 'AUTO';
+    const r = await SPES.API.post('/api/attendance/qr-scan', { code: String(code || '').trim(), slot });
+    if (SPES.QrView) SPES.QrView._busy = false;
+    if (!r.ok) {
+      SPES.Sound.play('bad');
+      this.flash(r.error);
+    } else {
+      SPES.Sound.play('ok');
+      SPES.DB.set('attendance', [...SPES.AttendanceModel.all(), r.data.record]);
+      this.s.lastQrResult = r.data;
+      this.flash(`${r.data.beneficiary.name} — ${r.data.slotLabel} approved via QR!`, true);
+    }
+    this.anim = false;
+    this.render();
   },
 
   switchAuthMode(nextMode) {
@@ -606,6 +626,20 @@ SPES.App = {
       SPES.API.post(`/api/messages/${mid}/react`, { emoji });
       return;
     }
+    else if (a === 'dl_qr' && SPES.QrView) {
+      this.setBusy(btn, true);
+      await SPES.QrView.downloadPass(u);
+      this.setBusy(btn, false);
+      return;
+    }
+    else if (a === 'qr_start' && SPES.QrView && u.role === 'admin') {
+      SPES.QrView.startCamera(code => this.submitQrScan(code));
+      return;
+    }
+    else if (a === 'qr_stop' && SPES.QrView) {
+      SPES.QrView.stopCamera();
+      return;
+    }
     else if (a === 'dl_id' && SPES.IdCard) {
       this.setBusy(btn, true);
       await SPES.IdCard.download(u, d.side || 'both');
@@ -731,6 +765,9 @@ SPES.App = {
         this.render();
         const r = await M.API.patch(`/api/messages/${mid}`, { body });
         if (!r.ok) { this.flash(r.error); await M.API.bootstrap(); this.render(); }
+        return;
+      } else if (form === 'qr_manual' && u.role === 'admin') {
+        await this.submitQrScan(f.code);
         return;
       } else if (form === 'gtype') { M.Games.type(f.val || '');
       } else if (form === 'name') {
@@ -915,6 +952,7 @@ SPES.App = {
     const af = document.querySelector('input[autofocus]'); if (af) af.focus();
     s.m = null;
     this.applySearch(); this.refreshPresence();
+    if (SPES.QrView) SPES.QrView.hydrateProfileQr();
   },
 
   ctx(u) { const dates = SPES.UserModel.workDates(u), today = SPES.DB.get('serverDate') || SPES.AttendanceModel.day(); return { dates, today, idx: dates.indexOf(today) + 1 }; },
@@ -974,6 +1012,16 @@ SPES.App = {
     if (tab === 'personal' && SPES.PisView) return u.role === 'head' ? SPES.PisView.adminIndex(SPES.BatchModel.all(), M.all(), s.pisBatch, s.pisUser, s.pisQ || '') : '<h1>Not authorized</h1>';
     if (tab === 'accounts') return u.role === 'head' ? V.accountsList(M.all(), s.acctQ || '') : '<h1>Not authorized</h1>';
     if (tab === 'review') return u.role === 'admin' ? V.review(A.all().slice().reverse().map(a => ({ ...a, name: names[a.userId] || 'Beneficiary', label: A.SLOTS[a.slot] ? A.SLOTS[a.slot].label : 'Attendance' })), s.m, A.excuses().map(ex => ({ ...ex, name: names[ex.userId] || 'Beneficiary' }))) : '<h1>Not authorized</h1>';
+    if (tab === 'qrscan' && SPES.QrView) {
+      if (u.role !== 'admin') return '<h1>Not authorized</h1>';
+      const today = SPES.DB.get('serverDate') || A.day();
+      const byId = Object.fromEntries(M.all().map(x => [x.id, x]));
+      const scans = A.all().filter(a => a.date === today && /QR Scan/i.test(a.reviewedBy || '')).slice().reverse().map(a => {
+        const ben = byId[a.userId] || {};
+        return { ...a, name: ben.name || 'Beneficiary', spesId: ben.spesId, batch: ben.batch, label: (A.SLOTS[a.slot] && A.SLOTS[a.slot].label) || a.slot };
+      });
+      return SPES.QrView.adminScanner(s.qrSlot || 'AUTO', s.lastQrResult || null, scans, s.m);
+    }
     if (tab === 'answers') {
       if (u.role !== 'head') return '<h1>Not authorized</h1>';
       const K = SPES.KeyModel;
