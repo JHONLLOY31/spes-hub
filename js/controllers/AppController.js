@@ -44,7 +44,10 @@ SPES.App = {
       document.querySelectorAll('.ansroom').forEach(r => { let n = 0; r.querySelectorAll('.ansitem').forEach(i => { const hit = !q || i.textContent.toLowerCase().includes(q); i.hidden = !hit; if (hit) n++; }); r.hidden = !n; r.open = !!q && n > 0; });
     });
     root.addEventListener('click', () => { if (this.s.keyOpen) this.s.keyOpen = Date.now(); }, true);
-    root.addEventListener('change', e => { if (e.target.id === 'attDate' && e.target.value) { this.s.roomDate = e.target.value; this.render(); } });
+    root.addEventListener('change', e => {
+      if (e.target.id === 'attDate' && e.target.value) { this.s.roomDate = e.target.value; this.render(); }
+      if (e.target.id === 'privacyAgreeChk') { const b = document.getElementById('privacyAgreeBtn'); if (b) b.disabled = !e.target.checked; }
+    });
 
     // Cross-device presence heartbeat & idle lock for answer key
     setInterval(async () => {
@@ -97,24 +100,34 @@ SPES.App = {
     // Handle Google OAuth redirect (#access_token=... or #error_description=...)
     if (this.portal() === 'user' && (location.hash.includes('access_token=') || location.hash.includes('error'))) {
       const hp = new URLSearchParams(location.hash.slice(1));
+      const qp = new URLSearchParams(location.search);
+      const isReset = qp.get('flow') === 'reset';
       history.replaceState(null, '', location.pathname);
       if (hp.get('error_description') || hp.get('error')) {
         this.flash(hp.get('error_description') || 'Google sign-in was cancelled.');
+        if (isReset) this.s.mode = 'forgot';
       } else if (hp.get('access_token')) {
-        SPES.View.mount(`<div class="fx"><div class="fx-in"><img src="img/logo.png" alt=""><b>Signing in with Google</b><span>Please wait...</span><i class="fx-bar"></i></div></div>`);
+        SPES.View.mount(`<div class="fx"><div class="fx-in"><img src="img/logo.png" alt=""><b>${isReset ? 'Verifying Google account' : 'Signing in with Google'}</b><span>Please wait...</span><i class="fx-bar"></i></div></div>`);
         const accessToken = hp.get('access_token');
-        const gr = await SPES.API.post('/api/auth/google/session', { accessToken });
-        if (!gr.ok) {
-          this.flash(gr.error);
-        } else if (gr.data.status === 'needs_profile') {
-          this.s.googleToken = accessToken;
-          this.s.googleData = gr.data;
-          this.s.mode = 'google_setup';
-        } else if (gr.data.status === 'logged_in') {
-          await SPES.API.bootstrap();
-          this._syncAt = Date.now();
-          this.transition('Welcome back,', gr.data.user.name, true);
-          return;
+        if (isReset) {
+          const vr = await SPES.API.post('/api/auth/google/verify-reset', { accessToken });
+          this.s.mode = 'forgot';
+          if (!vr.ok) this.flash(vr.error);
+          else { this.s.googleResetToken = accessToken; this.s.googleReset = vr.data; }
+        } else {
+          const gr = await SPES.API.post('/api/auth/google/session', { accessToken });
+          if (!gr.ok) {
+            this.flash(gr.error);
+          } else if (gr.data.status === 'needs_profile') {
+            this.s.googleToken = accessToken;
+            this.s.googleData = gr.data;
+            this.s.mode = 'google_setup';
+          } else if (gr.data.status === 'logged_in') {
+            await SPES.API.bootstrap();
+            this._syncAt = Date.now();
+            this.transition('Welcome back,', gr.data.user.name, true);
+            return;
+          }
         }
       }
       this.render();
@@ -236,8 +249,9 @@ SPES.App = {
     setTimeout(() => {
       this.s.mode = nextMode;
       this.s.m = null;
+      if (nextMode === 'login') { this.s.googleReset = null; this.s.googleResetToken = null; }
       const tmp = document.createElement('div');
-      tmp.innerHTML = SPES.View.auth(this.s.mode, null, this.s.as, this.s.googleData);
+      tmp.innerHTML = SPES.View.auth(this.s.mode, null, this.s.as, this.s.googleData, this.s.googleReset);
       const newPanel = tmp.querySelector('.panel');
       if (newPanel) {
         const cls = forward ? 'panel-in-r' : 'panel-in-l';
@@ -324,6 +338,21 @@ SPES.App = {
       location.href = '/api/auth/google';
       return;
     }
+    else if (a === 'google_reset_start') {
+      if (btn) { btn.disabled = true; btn.classList.add('is-busy'); btn.textContent = 'Connecting to Google...'; }
+      location.href = '/api/auth/google?flow=reset';
+      return;
+    }
+    else if (a === 'privacy_cancel') {
+      this.pendingReg = null;
+      s.privacyModal = false;
+      this.anim = false;
+    }
+    else if (a === 'privacy_agree') {
+      const chk = document.getElementById('privacyAgreeChk');
+      if (!chk || !chk.checked) return;
+      return this.finishRegistration(btn);
+    }
     else if (a === 'room') { s.room = d.code || null; s.roomQ = ''; s.roomDate = null; }
     else if (a === 'avborder') {
       SPES.UserModel.updateLocal(u.id, { avBorder: d.v });
@@ -403,7 +432,7 @@ SPES.App = {
   async submit(form, el, mode, submitter) {
     const f = Object.fromEntries(new FormData(el).entries()), s = this.s, u = this.user(), M = SPES;
     const btn = submitter || el.querySelector('button[type=submit], button:not([type])');
-    const needsNet = !['attend', 'gtype'].includes(form);
+    const needsNet = !['attend', 'gtype', 'register', 'google_complete'].includes(form);
     if (needsNet) this.setBusy(btn, true);
 
     try {
@@ -419,30 +448,28 @@ SPES.App = {
         }
       } else if (form === 'register') {
         if (!f.gender) { this.flash('Please select your gender.'); this.render(); return; }
-        const r = await M.API.post('/api/register', { ...f, username: f.username.trim(), name: f.name.trim() });
-        if (!r.ok) this.flash(r.error);
-        else {
-          this.flash(`Account created (SPES ID: ${r.data.spesId}). Please wait for the administrator to approve it before you log in.`, true);
-          s.mode = 'login'; s.as = this.portal();
-          this.transition('Account created!', 'Waiting for administrator approval', false);
-          return;
-        }
+        this.pendingReg = { kind: 'register', payload: { ...f, username: f.username.trim(), name: f.name.trim(), privacyAccepted: true } };
+        s.privacyModal = true; this.anim = false; this.render(); return;
       } else if (form === 'forgot') {
         const r = await M.API.post('/api/forgot', { username: f.username.trim(), batch: f.batch, password: f.password });
         if (!r.ok) this.flash(r.error);
         else { this.flash('Password updated. You can log in now.', true); s.mode = 'login'; s.as = this.portal(); }
-      } else if (form === 'google_complete') {
-        const r = await M.API.post('/api/auth/google/complete', {
-          accessToken: s.googleToken, name: f.name.trim(), username: f.username.trim(), gender: f.gender, batch: f.batch
-        });
+      } else if (form === 'google_reset') {
+        if (f.password !== f.password2) { this.flash('The two passwords do not match.'); this.render(); return; }
+        const r = await M.API.post('/api/auth/google/reset-password', { accessToken: s.googleResetToken, password: f.password });
         if (!r.ok) this.flash(r.error);
         else {
-          s.googleToken = null; s.googleData = null;
-          this.flash(`Account created (SPES ID: ${r.data.spesId}). Please wait for the administrator to approve it before you log in.`, true);
+          s.googleResetToken = null; s.googleReset = null;
+          this.flash('Password updated! You can now log in with your new password or Google.', true);
           s.mode = 'login'; s.as = this.portal();
-          this.transition('Account created!', 'Waiting for administrator approval', false);
-          return;
         }
+      } else if (form === 'google_complete') {
+        if (!f.gender) { this.flash('Please select your gender.'); this.render(); return; }
+        this.pendingReg = {
+          kind: 'google_complete',
+          payload: { accessToken: s.googleToken, name: f.name.trim(), username: f.username.trim(), gender: f.gender, batch: f.batch, privacyAccepted: true }
+        };
+        s.privacyModal = true; this.anim = false; this.render(); return;
       } else if (form === 'attend') {
         const day = this.selDay('day', u);
         if (!el.photo.files[0]) { this.flash('Please choose an image first.'); this.render(); return; }
@@ -519,6 +546,26 @@ SPES.App = {
     }
   },
 
+  async finishRegistration(btn) {
+    const reg = this.pendingReg, s = this.s;
+    if (!reg) return;
+    this.setBusy(btn, true);
+    const endpoint = reg.kind === 'google_complete' ? '/api/auth/google/complete' : '/api/register';
+    const r = await SPES.API.post(endpoint, reg.payload);
+    this.setBusy(btn, false);
+    this.pendingReg = null;
+    s.privacyModal = false;
+    if (!r.ok) {
+      this.flash(r.error);
+      this.render();
+      return;
+    }
+    if (reg.kind === 'google_complete') { s.googleToken = null; s.googleData = null; }
+    this.flash(`Account created (SPES ID: ${r.data.spesId}). Please wait for the administrator to approve it before you log in.`, true);
+    s.mode = 'login'; s.as = this.portal();
+    this.transition('Account created!', 'Waiting for administrator approval', false);
+  },
+
   async uploadAttendance(btn) {
     const u = this.user(), p = this.pendingAtt;
     if (!u || !p) return;
@@ -539,7 +586,7 @@ SPES.App = {
     const u = this.user(), V = SPES.View, s = this.s;
     this.applyPrefs(u);
     if (!u) {
-      V.mount(V.auth(s.mode, s.m, s.as, s.googleData));
+      V.mount(V.auth(s.mode, s.m, s.as, s.googleData, s.googleReset) + (s.privacyModal ? V.privacyConsentModal() : ''));
     } else {
       const tabs = this.TABS[u.role];
       const tab = s.tab && tabs.includes(s.tab) ? s.tab : tabs[0];

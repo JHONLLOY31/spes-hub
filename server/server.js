@@ -154,7 +154,8 @@ route('POST', '/api/register', undefined, async ({ body }) => {
   const { error: profErr } = await sb.from('profiles').insert({
     id: uid, username, spes_id: spesId, name, gender,
     role: 'beneficiary', batch_code: batch.code, status: 'pending',
-    start_date: nowInTz().date
+    start_date: nowInTz().date,
+    settings: body.privacyAccepted ? { privacyAcceptedAt: new Date().toISOString() } : {}
   });
   if (profErr) {
     await sb.auth.admin.deleteUser(uid);
@@ -209,8 +210,43 @@ route('POST', '/api/forgot', undefined, async ({ body }) => {
   if (password.length < 6 || password.length > 100) fail(400, 'Password needs at least 6 characters.');
   const { data: prof } = await sb.from('profiles').select('*').ilike('username', username).eq('role', 'beneficiary').maybeSingle();
   if (!prof || prof.batch_code !== batch) fail(400, 'Username and batch code do not match.');
+  // Google-linked accounts MUST authenticate with Google first before setting a new password
+  const { data: authInfo } = await sb.auth.admin.getUserById(prof.id);
+  const u = authInfo && authInfo.user;
+  const providers = (u && u.app_metadata && u.app_metadata.providers) || [];
+  const isGoogle = providers.includes('google') || (u && u.email && !u.email.endsWith('@spes-hub.local'));
+  if (isGoogle) fail(403, 'This account uses Google Sign-In. Please click "Verify with Google" first to authenticate before creating a new password.');
   const upd = await sb.auth.admin.updateUserById(prof.id, { password });
   if (upd.error) fail(500, 'Could not update password.');
+  return [200, { ok: true }];
+});
+
+// ---- Google OAuth password-reset verification ----
+route('POST', '/api/auth/google/verify-reset', undefined, async ({ body }) => {
+  const token = typeof body.accessToken === 'string' ? body.accessToken.trim() : '';
+  if (!token) fail(400, 'Missing Google verification token.');
+  const { data: authData, error: authErr } = await sb.auth.getUser(token);
+  if (authErr || !authData || !authData.user) fail(401, 'Google verification expired or invalid. Please try again.');
+  const gUser = authData.user;
+  const { data: prof } = await sb.from('profiles').select('id, username, name, role').eq('id', gUser.id).maybeSingle();
+  if (!prof) fail(404, 'No SPES Hub account is linked to this Google account yet.');
+  if (prof.role !== 'beneficiary') fail(403, 'Staff accounts cannot reset passwords here.');
+  return [200, { ok: true, email: gUser.email || '', username: prof.username, name: prof.name }];
+});
+
+route('POST', '/api/auth/google/reset-password', undefined, async ({ body }) => {
+  const token = typeof body.accessToken === 'string' ? body.accessToken.trim() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!token) fail(400, 'Google verification expired. Please verify with Google again.');
+  if (password.length < 6 || password.length > 100) fail(400, 'New password needs at least 6 characters.');
+  const { data: authData, error: authErr } = await sb.auth.getUser(token);
+  if (authErr || !authData || !authData.user) fail(401, 'Google verification expired. Please verify with Google again.');
+  const gUser = authData.user;
+  const { data: prof } = await sb.from('profiles').select('id, role').eq('id', gUser.id).maybeSingle();
+  if (!prof || prof.role !== 'beneficiary') fail(404, 'Beneficiary account not found.');
+  const upd = await sb.auth.admin.updateUserById(gUser.id, { password });
+  if (upd.error) fail(500, 'Could not update password: ' + upd.error.message);
+  await logActivity(gUser.id, 'Reset password after Google verification');
   return [200, { ok: true }];
 });
 
@@ -270,7 +306,8 @@ route('POST', '/api/auth/google/complete', undefined, async ({ body }) => {
   const { error: profErr } = await sb.from('profiles').insert({
     id: gUser.id, username, spes_id: spesId, name, gender,
     role: 'beneficiary', batch_code: batch.code, status: 'pending',
-    start_date: nowInTz().date
+    start_date: nowInTz().date,
+    settings: body.privacyAccepted ? { privacyAcceptedAt: new Date().toISOString() } : {}
   });
   if (profErr) fail(500, 'Could not save profile: ' + profErr.message);
 
@@ -730,7 +767,8 @@ async function api(req, res, url) {
   if (req.method === 'GET' && url.pathname === '/api/photos') return servePhoto(req, res, url);
   if (req.method === 'GET' && url.pathname === '/api/auth/google') {
     const proto = String(req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
-    const redirectTo = `${proto}://${req.headers.host}/index.html`;
+    const flow = url.searchParams.get('flow') === 'reset' ? '?flow=reset' : '';
+    const redirectTo = `${proto}://${req.headers.host}/index.html${flow}`;
     const authUrl = `${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}&prompt=select_account`;
     res.writeHead(302, { Location: authUrl, 'Cache-Control': 'no-store' });
     return res.end();

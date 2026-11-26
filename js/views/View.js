@@ -28,8 +28,8 @@ SPES.View = {
       </div>`;
   },
 
-  auth(mode, m, as, gData) {
-    if (mode === 'forgot') return this.forgot(m);
+  auth(mode, m, as, gData, gReset) {
+    if (mode === 'forgot') return this.forgot(m, gReset);
     if (mode === 'google_setup') return this.googleSetup(gData || {}, m);
     const reg = mode === 'register', adm = as === 'admin';
     return `<div class="auth">${this.bgfx()}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>${adm ? 'Review attendance proofs, manage batches and keep track of every SPES beneficiary.' : 'Attendance, work journals and learning games for SPES beneficiaries of the Davao Oriental Provincial Capitol.'}</p></section>
@@ -62,12 +62,42 @@ SPES.View = {
       ${badges && badges.length ? `<h3 style="margin-top:1.5rem">Your badges</h3><div class="row">${badges.map(b => `<span class="tag gold">${b}</span>`).join('')}</div>` : ''}`;
   },
 
-  forgot(m) {
-    return `<div class="auth">${this.bgfx()}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Reset your password with your username and batch code.</p></section>
+  forgot(m, gReset) {
+    if (gReset) {
+      return `<div class="auth">${this.bgfx()}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Your Google account is verified. You can now create a new password.</p></section>
+        <form class="panel" data-form="google_reset">${this.back('mode', 'Back to log in', 'login')}<h2>Create new password</h2>
+          <span class="portal-tag">Verified: ${this.esc(gReset.email || gReset.username)}</span>
+          ${this.msg(m)}
+          <label>New password</label><input name="password" type="password" required minlength="6" autocomplete="new-password">
+          <label>Confirm new password</label><input name="password2" type="password" required minlength="6" autocomplete="new-password">
+          <button class="btn" type="submit" style="width:100%">Save new password</button></form></div>`;
+    }
+    return `<div class="auth">${this.bgfx()}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Signed up with Google? Authenticate with Google first before creating a new password.</p></section>
       <form class="panel" data-form="forgot">${this.back('mode', 'Back to log in', 'login')}<h2>Forgot password</h2>${this.msg(m)}
+        <p class="muted" style="margin:.2rem 0 .7rem">Google-linked accounts must verify with Google first:</p>
+        <button type="button" class="gbtn" data-act="google_reset_start">${this.GOOGLE_G}Verify with Google</button>
+        <div class="or"><span>or username &amp; batch code</span></div>
         <label>Username</label><input name="username" required><label>Batch code</label><input name="batch" required>
-        <label>New password</label><input name="password" type="password" required autocomplete="new-password">
-        <button class="btn" style="width:100%">Reset password</button></form></div>`;
+        <label>New password</label><input name="password" type="password" required minlength="6" autocomplete="new-password">
+        <button class="btn" type="submit" style="width:100%">Reset password</button></form></div>`;
+  },
+  privacyConsentModal() {
+    const shield = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>';
+    return `<div class="modal" role="dialog" aria-modal="true"><div class="mbox privacy-box">
+      <div class="mic">${shield}</div>
+      <h2>Data Privacy &amp; Documentation Consent</h2>
+      <p class="muted">Before completing your SPES Hub registration, please review and approve how your information is used:</p>
+      <ul class="privacy-list">
+        <li><b>Personal information:</b> Your full name, gender, SPES ID, batch code, username, and profile photo will be stored and visible to authorized SPES Administrators and Office Heads.</li>
+        <li><b>Personal documentation:</b> Your daily attendance proof photos, daily work journals, and supporting documentation photos will be reviewed by SPES staff for program verification.</li>
+        <li><b>Data protection:</b> Your records are used strictly for the SPES program of the Davao Oriental Provincial Capitol and are never sold or shared with outsiders.</li>
+      </ul>
+      <label class="privacy-chk"><input type="checkbox" id="privacyAgreeChk"><span>I understand and approve that SPES Hub Administrators and Office Heads may view my personal information and personal documentation.</span></label>
+      <div class="row" style="justify-content:center;margin-top:.8rem">
+        <button type="button" class="btn alt" data-act="privacy_cancel">Cancel</button>
+        <button type="button" class="btn" id="privacyAgreeBtn" data-act="privacy_agree" disabled>I Agree &amp; Continue</button>
+      </div>
+    </div></div>`;
   },
   googleSetup(g, m) {
     return `<div class="auth">${this.bgfx()}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Finish setting up your SPES beneficiary profile so the administrator can approve your account.</p></section>

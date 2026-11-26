@@ -564,3 +564,31 @@ body,.card,.stat,.day,.cd,.back,.pills button,.seg,.seg button,.side nav button,
 @keyframes authInL{from{opacity:0;transform:translateX(-54px) rotateY(-10deg) scale(.95);filter:blur(6px)}to{opacity:1;transform:none;filter:none}}
 @keyframes authFieldIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @keyframes glassSheen{from{transform:translateX(-70%)}to{transform:translateX(75%)}}
+
+/* ===== Privacy Consent Modal & Upgraded Admin/User UI Transitions ===== */
+.privacy-box{max-width:460px;text-align:left}
+.privacy-box .mic{margin:0 auto .8rem}
+.privacy-box h2,.privacy-box > p{text-align:center}
+.privacy-list{margin:.8rem 0;padding:0;list-style:none;display:grid;gap:.55rem}
+.privacy-list li{padding:.65rem .8rem;border-radius:12px;background:rgba(255,196,0,.1);border:1px solid rgba(255,196,0,.28);font-size:.88rem;line-height:1.45}
+[data-theme=dark] .privacy-list li{background:rgba(255,196,0,.12);border-color:rgba(255,196,0,.3)}
+.privacy-chk{display:flex;align-items:flex-start;gap:.6rem;margin:.85rem 0 .2rem;cursor:pointer;font-size:.88rem;font-weight:600;line-height:1.4}
+.privacy-chk input{width:18px;height:18px;margin-top:2px;flex:none;accent-color:var(--y);cursor:pointer}
+.btn:disabled{opacity:.48;cursor:not-allowed;transform:none!important}
+
+/* Staggered silky entrance for Admin & Beneficiary dashboards/tabs */
+.content-body.enter .stat,.content-body.enter .card,.content-body.enter .brm{animation:cardRise .34s cubic-bezier(.22,1,.36,1) both}
+.content-body.enter .stat:nth-child(2),.content-body.enter .card:nth-child(2),.content-body.enter .brm:nth-child(2){animation-delay:.04s}
+.content-body.enter .stat:nth-child(3),.content-body.enter .card:nth-child(3),.content-body.enter .brm:nth-child(3){animation-delay:.08s}
+.content-body.enter .stat:nth-child(4),.content-body.enter .card:nth-child(4),.content-body.enter .brm:nth-child(4){animation-delay:.12s}
+.content-body.enter .card:nth-child(n+5),.content-body.enter .brm:nth-child(n+5){animation-delay:.15s}
+@keyframes cardRise{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
+
+/* Elevated hover depth for Admin & User cards, stats, and tables */
+.stat:hover{transform:translateY(-2px);box-shadow:0 12px 26px rgba(17,17,17,.12)}
+.tablewrap tr{transition:background-color .16s ease}
+.tablewrap tr:hover td{background:rgba(255,196,0,.07)}
+.msg{animation:msgSlide .26s cubic-bezier(.22,1,.36,1) both}
+@keyframes msgSlide{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.side nav button{position:relative}
+.side nav button.on::before{content:"";position:absolute;left:-6px;top:22%;bottom:22%;width:3.5px;border-radius:9px;background:var(--k)}
