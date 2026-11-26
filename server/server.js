@@ -72,6 +72,7 @@ const mapAnn = a => ({ id: a.id, title: a.title, body: a.body, target: a.target,
 const mapNotif = n => ({ id: n.id, to: n.target, text: n.text, kind: n.kind, ts: n.created_at });
 const mapActivity = a => ({ uid: a.user_id, text: a.text, ts: a.created_at });
 const mapFeedback = f => ({ id: f.id, userId: f.user_id, name: f.name, text: f.text, rating: f.rating, ts: f.created_at });
+const mapMessage = m => ({ id: m.id, batch: m.batch_code, from: m.sender_id, to: m.receiver_id, body: m.body, readAt: m.read_at, ts: m.created_at });
 
 async function pushNotif(target, text, kind = 'info') {
   await sb.from('notifications').insert({ target, text, kind });
@@ -324,7 +325,7 @@ route('POST', '/api/auth/google/complete', undefined, async ({ body }) => {
 route('GET', '/api/bootstrap', 'any', async ({ user }) => {
   const staff = user.role !== 'beneficiary';
   const [
-    batchesRes, usersRes, attRes, manRes, excRes, jrnRes, evRes, annRes, notifRes, actRes, fbRes, gpRes, ptsRes, presRes, keyRes
+    batchesRes, usersRes, attRes, manRes, excRes, jrnRes, evRes, annRes, notifRes, actRes, fbRes, gpRes, ptsRes, presRes, keyRes, msgRes
   ] = await Promise.all([
     sb.from('batches').select('*').order('id', { ascending: false }),
     staff
@@ -359,7 +360,10 @@ route('GET', '/api/bootstrap', 'any', async ({ user }) => {
     sb.from('presence').select('*'),
     user.role === 'admin'
       ? sb.from('app_settings').select('value').eq('key', 'answer_key').maybeSingle()
-      : Promise.resolve({ data: null })
+      : Promise.resolve({ data: null }),
+    user.role === 'beneficiary'
+      ? sb.from('messages').select('*').or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`).order('created_at', { ascending: true }).limit(400)
+      : Promise.resolve({ data: [] })
   ]);
 
   const progress = {};
@@ -380,7 +384,8 @@ route('GET', '/api/bootstrap', 'any', async ({ user }) => {
     serverDate: nowInTz().date,
     batches: (batchesRes.data || []).map(mapBatch),
     users: (usersRes.data || []).map(p => p.id === user.id || staff ? mapProfile(p) : {
-      id: p.id, name: p.name, role: p.role, batch: p.batch_code, status: p.status
+      id: p.id, name: p.name, role: p.role, batch: p.batch_code, status: p.status,
+      avatar: photoUrl(p.avatar_path), avBorder: p.av_border || null, note: p.note || null
     }),
     attendance: (attRes.data || []).map(mapAttendance),
     attmanual: (manRes.data || []).map(mapManual),
@@ -394,6 +399,7 @@ route('GET', '/api/bootstrap', 'any', async ({ user }) => {
     progress,
     points,
     presence,
+    messages: (msgRes.data || []).map(mapMessage),
     answerKeyHas: !!(keyRes.data && keyRes.data.value && keyRes.data.value.hash)
   }];
 });
@@ -776,6 +782,46 @@ route('POST', '/api/presence', 'any', async ({ user, body }) => {
   const map = {};
   for (const r of (data || [])) map[r.user_id] = { t: new Date(r.last_seen).getTime(), on: r.online };
   return [200, { presence: map }];
+});
+
+// ---- Same-Batch Direct Messages (Beneficiary Messenger) ----
+route('GET', '/api/messages', ['beneficiary'], async ({ user }) => {
+  const [msgRes, presRes, peersRes] = await Promise.all([
+    sb.from('messages').select('*').or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`).order('created_at', { ascending: true }).limit(400),
+    sb.from('presence').select('*'),
+    sb.from('profiles').select('id, name, role, batch_code, status, avatar_path, av_border, note').eq('role', 'beneficiary').eq('batch_code', user.batch_code).eq('status', 'approved')
+  ]);
+  const presence = {};
+  for (const r of (presRes.data || [])) presence[r.user_id] = { t: new Date(r.last_seen).getTime(), on: r.online };
+  const peers = (peersRes.data || []).map(p => ({
+    id: p.id, name: p.name, role: p.role, batch: p.batch_code, status: p.status,
+    avatar: photoUrl(p.avatar_path), avBorder: p.av_border || null, note: p.note || null
+  }));
+  return [200, { messages: (msgRes.data || []).map(mapMessage), presence, peers }];
+});
+
+route('POST', '/api/messages', ['beneficiary'], async ({ user, body }) => {
+  const to = str(body.to, 60);
+  const text = str(body.body, 1000);
+  if (!to || to === user.id) fail(400, 'Choose a classmate from your batch to message.');
+  if (!text) fail(400, 'Message cannot be empty.');
+  const { data: peer } = await sb.from('profiles').select('id, role, status, batch_code').eq('id', to).maybeSingle();
+  if (!peer || peer.role !== 'beneficiary' || peer.status !== 'approved' || peer.batch_code !== user.batch_code) {
+    fail(403, 'You can only message approved beneficiaries in your own batch.');
+  }
+  const { data, error } = await sb.from('messages').insert({
+    batch_code: user.batch_code, sender_id: user.id, receiver_id: to, body: text
+  }).select().single();
+  if (error) fail(500, 'Could not send message: ' + error.message);
+  return [201, { message: mapMessage(data) }];
+});
+
+route('POST', '/api/messages/read', ['beneficiary'], async ({ user, body }) => {
+  const from = str(body.from, 60);
+  if (!from) fail(400, 'Missing sender.');
+  const now = new Date().toISOString();
+  await sb.from('messages').update({ read_at: now }).eq('sender_id', from).eq('receiver_id', user.id).is('read_at', null);
+  return [200, { ok: true, readAt: now }];
 });
 
 // ---- Admin Answer Key Password ----

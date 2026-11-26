@@ -60,6 +60,7 @@ SPES.API = {
     SPES.DB.set('progress', d.progress || {});
     SPES.DB.set('points', d.points || {});
     SPES.DB.set('presence', d.presence || {});
+    SPES.DB.set('messages', d.messages || []);
     SPES.DB.set('answerKeyHas', !!d.answerKeyHas);
     return r;
   }

@@ -4,7 +4,7 @@ SPES.App = {
   anim: true, jpics: [], jkey: null, draft: null, pendingAtt: null, _syncAt: 0, _syncing: false,
   GAME_ACTS: ['open', 'quit', 'cert', 'answer', 'next', 'retry', 'flip', 'cell', 'mute'],
   TABS: {
-    beneficiary: ['dashboard', 'attendance', 'journal', 'calendar', 'games', 'board', 'badges', 'notifs', 'profile', 'settings'],
+    beneficiary: ['dashboard', 'attendance', 'journal', 'messages', 'calendar', 'games', 'board', 'badges', 'notifs', 'profile', 'settings'],
     head: ['dashboard', 'journals', 'calendar', 'notifs', 'profile', 'settings'],
     admin: ['dashboard', 'approvals', 'review', 'journals', 'admin', 'announce', 'feedback', 'calendar', 'board', 'answers', 'notifs', 'profile', 'settings']
   },
@@ -36,7 +36,14 @@ SPES.App = {
         document.querySelectorAll('[data-gdd].open').forEach(x => { x.classList.remove('open'); x.querySelector('[data-gdd-toggle]').setAttribute('aria-expanded', 'false'); });
       }
     });
-    root.addEventListener('input', e => { if (e.target.id === 'classSearch') { this.s.roomQ = e.target.value; this.applySearch(); } });
+    root.addEventListener('input', e => {
+      if (e.target.id === 'classSearch') { this.s.roomQ = e.target.value; this.applySearch(); }
+      if (e.target.id === 'chatSearch') {
+        this.s.chatQ = e.target.value;
+        const q = e.target.value.trim().toLowerCase();
+        document.querySelectorAll('[data-chat-search]').forEach(el => { el.hidden = !el.dataset.chatSearch.includes(q); });
+      }
+    });
     root.addEventListener('input', e => {
       if (e.target.id !== 'ansSearch') return;
       this.s.keyOpen = Date.now();
@@ -98,6 +105,42 @@ SPES.App = {
     });
     root.addEventListener('submit', e => { e.preventDefault(); this.submit(e.target.dataset.form, e.target, e.submitter && e.submitter.value, e.submitter); });
     root.addEventListener('reset', e => { const pv = e.target.querySelector('.pv'); if (pv) pv.innerHTML = ''; });
+    // Live message polling every 4s while on the Message tab
+    setInterval(async () => {
+      const u = this.user();
+      if (!u || u.role !== 'beneficiary' || this.s.tab !== 'messages' || this._chatPollBusy) return;
+      this._chatPollBusy = true;
+      try {
+        const r = await SPES.API.get('/api/messages');
+        if (r.ok && r.data) {
+          const prev = SPES.DB.get('messages', []);
+          const next = r.data.messages || [];
+          SPES.DB.set('presence', r.data.presence || SPES.DB.get('presence', {}));
+          if (r.data.peers) {
+            const me = this.user();
+            SPES.DB.set('users', [me, ...r.data.peers.filter(p => p.id !== me.id)]);
+          }
+          const changed = prev.length !== next.length || (next.length && prev.length && next[next.length - 1].id !== prev[prev.length - 1].id);
+          SPES.DB.set('messages', next);
+          if (changed) {
+            const input = document.getElementById('chatInput');
+            const draft = input ? input.value : '';
+            const focused = input && document.activeElement === input;
+            if (this.s.chatPeer && next.some(m => m.from === this.s.chatPeer && m.to === u.id && !m.readAt)) {
+              SPES.API.post('/api/messages/read', { from: this.s.chatPeer });
+            }
+            this.anim = false;
+            this.render();
+            const ni = document.getElementById('chatInput');
+            if (ni && draft) ni.value = draft;
+            if (ni && focused) ni.focus();
+            const box = document.getElementById('chatMsgs');
+            if (box) box.scrollTop = box.scrollHeight;
+          }
+        }
+      } finally { this._chatPollBusy = false; }
+    }, 4000);
+
     setInterval(() => this.tickClock(), 1000);
     setInterval(() => {
       if (!this.user() || this.s.tab !== 'attendance' || this.s.attConfirm || this.attSig === undefined) return;
@@ -312,7 +355,7 @@ SPES.App = {
 
   async act(a, d, btn) {
     const s = this.s, u = this.user();
-    this.anim = !['review', 'reviewexcuse', 'answer', 'attday', 'jday', 'flip', 'cell', 'rmpic', 'mute', 'sub', 'theme', 'lang', 'snd', 'markday', 'avborder', 'delnote', 'google', 'markpresent', 'deleteuser', 'canceldel', 'confirmdel', 'keylock', 'keymode', 'approve', 'decline', 'canceldecline', 'confirmdecline', 'reopen'].includes(a);
+    this.anim = !['review', 'reviewexcuse', 'chatpeer', 'chatback', 'answer', 'attday', 'jday', 'flip', 'cell', 'rmpic', 'mute', 'sub', 'theme', 'lang', 'snd', 'markday', 'avborder', 'delnote', 'google', 'markpresent', 'deleteuser', 'canceldel', 'confirmdel', 'keylock', 'keymode', 'approve', 'decline', 'canceldecline', 'confirmdecline', 'reopen'].includes(a);
 
     if (a === 'as') { s.as = d.v; s.m = null; }
     else if (a === 'deleteuser' && u.role === 'admin') { const t = SPES.UserModel.byId(d.id); if (t && t.role === 'beneficiary') s.delConfirm = t.id; }
@@ -451,6 +494,20 @@ SPES.App = {
       if (!r.ok) { this.flash(r.error); await SPES.API.bootstrap(); this.render(); }
       return;
     }
+    else if (a === 'chatpeer') {
+      s.chatPeer = d.id;
+      const now = new Date().toISOString();
+      const hadUnread = SPES.ChatView.unreadFrom(u, d.id) > 0;
+      if (hadUnread) {
+        SPES.DB.set('messages', SPES.ChatView.all().map(m => m.from === d.id && m.to === u.id && !m.readAt ? { ...m, readAt: now } : m));
+        SPES.API.post('/api/messages/read', { from: d.id });
+      }
+      this.render();
+      const box = document.getElementById('chatMsgs');
+      if (box) box.scrollTop = box.scrollHeight;
+      return;
+    }
+    else if (a === 'chatback') { s.chatPeer = null; }
     else if (a === 'dl_id' && SPES.IdCard) {
       this.setBusy(btn, true);
       await SPES.IdCard.download(u, d.side || 'both');
@@ -467,7 +524,7 @@ SPES.App = {
   async submit(form, el, mode, submitter) {
     const f = Object.fromEntries(new FormData(el).entries()), s = this.s, u = this.user(), M = SPES;
     const btn = submitter || el.querySelector('button[type=submit], button:not([type])');
-    const needsNet = !['attend', 'gtype', 'register', 'google_complete'].includes(form);
+    const needsNet = !['attend', 'gtype', 'register', 'google_complete', 'chatmsg'].includes(form);
     if (needsNet) this.setBusy(btn, true);
 
     try {
@@ -532,6 +589,25 @@ SPES.App = {
           this.jkey = null;
           this.flash(mode === 'submitted' ? 'Journal submitted.' : 'Draft saved.', true);
         }
+      } else if (form === 'chatmsg') {
+        const to = el.dataset.to, body = (f.body || '').trim();
+        if (!to || !body) return;
+        const tempId = 'tmp_' + Date.now();
+        const optimistic = { id: tempId, batch: u.batch, from: u.id, to, body, readAt: null, ts: new Date().toISOString() };
+        SPES.DB.set('messages', [...SPES.ChatView.all(), optimistic]);
+        this.anim = false;
+        this.render();
+        const box = document.getElementById('chatMsgs'); if (box) box.scrollTop = box.scrollHeight;
+        const inp = document.getElementById('chatInput'); if (inp) inp.focus();
+        const r = await M.API.post('/api/messages', { to, body });
+        if (r.ok && r.data && r.data.message) {
+          SPES.DB.set('messages', SPES.ChatView.all().map(m => m.id === tempId ? r.data.message : m));
+        } else {
+          SPES.DB.set('messages', SPES.ChatView.all().filter(m => m.id !== tempId));
+          this.flash(r.error || 'Could not send message.');
+          this.render();
+        }
+        return;
       } else if (form === 'gtype') { M.Games.type(f.val || '');
       } else if (form === 'name') {
         if (f.name.trim()) {
@@ -657,6 +733,7 @@ SPES.App = {
       const me = this.user();
       const badges = {
         notifs: SPES.NotifModel.unread(me),
+        messages: SPES.ChatView ? SPES.ChatView.unreadCount(me) : 0,
         approvals: me.role === 'beneficiary' ? 0 : SPES.UserModel.all().filter(x => x.status === 'pending').length
       };
       const modalHtml = (s.confirm ? V.logoutModal() : '')
@@ -762,6 +839,7 @@ SPES.App = {
       const en = this.draft ? { ...(saved || { status: 'draft' }), text: this.draft.text, event: this.draft.event } : saved; this.draft = null;
       return V.journal(days, n, en, SPES.EventModel.on(d.date), this.jpics, s.m);
     }
+    if (tab === 'messages' && SPES.ChatView) return SPES.ChatView.render(u, s.chatPeer, s.chatQ || '');
     if (tab === 'journals') return '<h2>Beneficiary journals</h2>' + V.entries(SPES.JournalModel.all().filter(j => j.status === 'submitted'), names);
     if (tab === 'review') return u.role === 'admin' ? V.review(A.all().slice().reverse().map(a => ({ ...a, name: names[a.userId] || 'Beneficiary', label: A.SLOTS[a.slot] ? A.SLOTS[a.slot].label : 'Attendance' })), s.m, A.excuses().map(ex => ({ ...ex, name: names[ex.userId] || 'Beneficiary' }))) : '<h1>Not authorized</h1>';
     if (tab === 'answers') {
