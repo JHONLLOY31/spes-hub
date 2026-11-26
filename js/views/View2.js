@@ -112,13 +112,32 @@ Object.assign(SPES.View, {
     return `<div class="modal" role="dialog" aria-modal="true"><div class="mbox"><div class="mic">${this.CAM}</div><h2>Confirm attendance upload</h2><p class="muted">Are you sure you want to upload this image? It will be sent to the Administrator for review and will remain Pending until approved.</p><div class="row" style="justify-content:center"><button class="btn alt" data-act="attcancel">Cancel</button><button class="btn" data-act="attsubmit">Submit image</button></div></div></div>`;
   },
 
+  noteModal(u) {
+    const live = this.noteLive(u), txt = (live && live.text) || '';
+    const left = live ? Math.max(1, Math.ceil((864e5 - (Date.now() - new Date(live.at).getTime())) / 36e5)) : 0;
+    return `<div class="modal" role="dialog" aria-modal="true"><div class="mbox note-modal">
+      <div class="avbig" style="margin-bottom:.6rem">${this.av(u, 'xl')}</div>
+      <h2 style="margin-bottom:.2rem">${live ? 'Edit your note' : 'Share a note'}</h2>
+      <p class="muted" style="margin:0 0 .8rem">${live ? `Visible above your photo for ~${left} more hour(s).` : 'Shows above your photo for 24 hours to your batchmates & staff.'}</p>
+      <form data-form="note">
+        <input name="text" id="noteModalInp" maxlength="60" required autofocus placeholder="What's on your mind?" value="${this.esc(txt)}">
+        <div class="note-meta"><small class="muted" id="noteCount">${txt.length} / 60</small></div>
+        <div class="row" style="justify-content:center;margin-top:.7rem">
+          <button type="button" class="btn alt" data-act="closenote">Cancel</button>
+          ${live ? '<button type="button" class="btn bad" data-act="delnote">Delete</button>' : ''}
+          <button class="btn" type="submit">${live ? 'Update' : 'Share'}</button>
+        </div>
+      </form>
+    </div></div>`;
+  },
+
   profile(u, stats, m) {
-    return `<h1>Profile</h1>${this.msg(m)}<div class="card"><div class="avbig">${this.noteLive(u) ? `<div class="nbub">${this.esc(this.noteLive(u).text)}</div>` : '<div class="nbub empty">Your note shows here</div>'}${this.av(u, 'xl')}<label class="btn alt avl">Change photo<input type="file" class="avpick" accept="image/*" hidden></label>
+    const live = this.noteLive(u);
+    return `<h1>Profile</h1>${this.msg(m)}<div class="card"><div class="avbig">
+      <button type="button" class="nbub nbub-btn ${live ? '' : 'empty'}" data-act="editnote" title="Click to ${live ? 'edit' : 'add'} your 24-hour note">${live ? this.esc(live.text) : '+ Share a note...'}</button>
+      ${this.av(u, 'xl')}<label class="btn alt avl">Change photo<input type="file" class="avpick" accept="image/*" hidden></label>
       <div class="abpick" role="group" aria-label="Photo frame">${[['none', 'None'], ['gold', 'Gold'], ['champion', 'Champion'], ['spark', 'Spark'], ['pulse', 'Pulse'], ['checker', 'Checker'], ['star', 'Star']].map(([k, l]) => `<button type="button" class="abp ${this.frameOf(u, 'xl') === k ? 'on' : ''}" data-act="avborder" data-v="${k}" aria-pressed="${this.frameOf(u, 'xl') === k}"><span class="frame fr-${k} sm"><span class="av plain"></span></span><span>${l}</span></button>`).join('')}</div></div>
       <div class="profile-meta"><b>SPES ID:</b> ${this.esc(u.spesId || 'Not assigned')} · <b>Gender:</b> ${this.esc(u.gender || 'Not specified')}</div><form data-form="name"><label>Full name</label><input name="name" value="${this.esc(u.name)}" required><label>Gender identity</label><select name="gender" required><option value="Male" ${u.gender === 'Male' ? 'selected' : ''}>Male</option><option value="Female" ${u.gender === 'Female' ? 'selected' : ''}>Female</option></select><button class="btn">Save profile</button></form></div>
-      <div class="card notes"><h3>My note</h3><p class="muted">Like a Messenger note: a short message that shows above your photo for 24 hours.</p>
-        <form data-form="note"><input name="text" maxlength="60" required placeholder="What's on your mind?" value="${this.esc((this.noteLive(u) || {}).text || '')}"><button class="btn">${this.noteLive(u) ? 'Update note' : 'Share note'}</button></form>
-        ${this.noteLive(u) ? `<p class="muted">Visible for about ${Math.max(1, Math.ceil((864e5 - (Date.now() - new Date(u.note.at).getTime())) / 36e5))} more hour(s). <button type="button" class="link" data-act="delnote">Delete note</button></p>` : ''}</div>
       <div class="stats">${stats.map((s, i) => `<div class="stat ${i === 0 ? 'hl' : ''}"><span>${s[0]}</span><b>${s[1]}</b></div>`).join('')}</div>
       ${u.role === 'beneficiary' && SPES.IdCard ? SPES.IdCard.section(u) : ''}`;
   },

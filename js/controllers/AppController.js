@@ -43,6 +43,10 @@ SPES.App = {
         const q = e.target.value.trim().toLowerCase();
         document.querySelectorAll('[data-chat-search]').forEach(el => { el.hidden = !el.dataset.chatSearch.includes(q); });
       }
+      if (e.target.id === 'noteModalInp') {
+        const cnt = document.getElementById('noteCount');
+        if (cnt) cnt.textContent = `${e.target.value.length} / 60`;
+      }
     });
     root.addEventListener('input', e => {
       if (e.target.id !== 'ansSearch') return;
@@ -355,7 +359,7 @@ SPES.App = {
 
   async act(a, d, btn) {
     const s = this.s, u = this.user();
-    this.anim = !['review', 'reviewexcuse', 'chatpeer', 'chatback', 'answer', 'attday', 'jday', 'flip', 'cell', 'rmpic', 'mute', 'sub', 'theme', 'lang', 'snd', 'markday', 'avborder', 'delnote', 'google', 'markpresent', 'deleteuser', 'canceldel', 'confirmdel', 'keylock', 'keymode', 'approve', 'decline', 'canceldecline', 'confirmdecline', 'reopen'].includes(a);
+    this.anim = !['review', 'reviewexcuse', 'chatpeer', 'chatback', 'editnote', 'closenote', 'answer', 'attday', 'jday', 'flip', 'cell', 'rmpic', 'mute', 'sub', 'theme', 'lang', 'snd', 'markday', 'avborder', 'delnote', 'google', 'markpresent', 'deleteuser', 'canceldel', 'confirmdel', 'keylock', 'keymode', 'approve', 'decline', 'canceldecline', 'confirmdecline', 'reopen'].includes(a);
 
     if (a === 'as') { s.as = d.v; s.m = null; }
     else if (a === 'deleteuser' && u.role === 'admin') { const t = SPES.UserModel.byId(d.id); if (t && t.role === 'beneficiary') s.delConfirm = t.id; }
@@ -422,7 +426,10 @@ SPES.App = {
       SPES.API.patch('/api/profile', { avBorder: d.v });
       return;
     }
+    else if (a === 'editnote') { s.noteModal = true; }
+    else if (a === 'closenote') { s.noteModal = false; }
     else if (a === 'delnote') {
+      s.noteModal = false;
       SPES.UserModel.updateLocal(u.id, { note: null });
       this.render();
       SPES.API.patch('/api/profile', { note: null });
@@ -644,8 +651,9 @@ SPES.App = {
       } else if (form === 'note') {
         const text = f.text.trim().slice(0, 60);
         if (text) {
+          s.noteModal = false;
           const r = await M.API.patch('/api/profile', { note: { text } });
-          if (r.ok) { M.UserModel.updateLocal(u.id, r.data.user); this.flash('Note shared. It shows above your photo for 24 hours.', true); }
+          if (r.ok) { M.UserModel.updateLocal(u.id, r.data.user); this.flash('Note shared above your photo for 24 hours.', true); }
           else this.flash(r.error);
         }
       } else if (form === 'pass') {
@@ -739,6 +747,7 @@ SPES.App = {
       const modalHtml = (s.confirm ? V.logoutModal() : '')
         + (s.delConfirm && SPES.UserModel.byId(s.delConfirm) ? V.deleteModal(SPES.UserModel.byId(s.delConfirm)) : '')
         + (s.declineConfirm && SPES.UserModel.byId(s.declineConfirm) ? V.declineModal(SPES.UserModel.byId(s.declineConfirm)) : '')
+        + (s.noteModal ? V.noteModal(me) : '')
         + (s.attConfirm ? V.attendanceConfirmModal() : '');
 
       const existingMain = !forceFull && document.querySelector('#app > .layout > main.content');

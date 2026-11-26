@@ -47,8 +47,8 @@ SPES.ChatView = {
 
     // Messenger-style horizontal Notes strip (own note + same-batch classmates)
     const noteStrip = `<div class="chat-notes">
-      <button type="button" class="cn-item" data-act="tab" data-t="profile" title="Update your 24-hour note in Profile">
-        <span class="cn-bub ${myNote ? '' : 'empty'}">${this.e(myNote ? myNote.text : 'Add a note...')}</span>
+      <button type="button" class="cn-item" data-act="editnote" title="Share or edit your 24-hour note">
+        <span class="cn-bub ${myNote ? '' : 'empty'}">${this.e(myNote ? myNote.text : '+ Note...')}</span>
         <span class="avw">${V.av(u)}<i class="dot on"></i></span>
         <small>Your note</small>
       </button>
