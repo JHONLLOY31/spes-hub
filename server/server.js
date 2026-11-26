@@ -512,7 +512,7 @@ route('PATCH', '/api/users/:id/status', ['admin'], async ({ params, body }) => {
   return [200, { ok: true, user: mapProfile(data) }];
 });
 
-route('DELETE', '/api/users/:id', ['admin'], async ({ params }) => {
+route('DELETE', '/api/users/:id', ['head'], async ({ params }) => {
   const { data: target } = await sb.from('profiles').select('id, name, role').eq('id', params.id).maybeSingle();
   if (!target || target.role !== 'beneficiary') fail(404, 'Beneficiary not found.');
   const del = await sb.auth.admin.deleteUser(target.id);

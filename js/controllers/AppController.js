@@ -384,9 +384,9 @@ SPES.App = {
     this.anim = !['review', 'reviewexcuse', 'awardjournal', 'delnotif', 'clearnotifs', 'chatpeer', 'chatback', 'chat_react', 'chat_edit', 'chat_edit_cancel', 'chat_unsend', 'editnote', 'closenote', 'answer', 'attday', 'jday', 'flip', 'cell', 'rmpic', 'mute', 'sub', 'theme', 'lang', 'snd', 'markday', 'avborder', 'delnote', 'google', 'markpresent', 'deleteuser', 'canceldel', 'confirmdel', 'keylock', 'keymode', 'approve', 'decline', 'canceldecline', 'confirmdecline', 'reopen'].includes(a);
 
     if (a === 'as') { s.as = d.v; s.m = null; }
-    else if (a === 'deleteuser' && u.role === 'admin') { const t = SPES.UserModel.byId(d.id); if (t && t.role === 'beneficiary') s.delConfirm = t.id; }
+    else if (a === 'deleteuser' && u.role === 'head') { const t = SPES.UserModel.byId(d.id); if (t && t.role === 'beneficiary') s.delConfirm = t.id; }
     else if (a === 'canceldel') s.delConfirm = null;
-    else if (a === 'confirmdel' && u.role === 'admin') {
+    else if (a === 'confirmdel' && u.role === 'head') {
       const id = s.delConfirm, t = SPES.UserModel.byId(id);
       s.delConfirm = null;
       if (t) {

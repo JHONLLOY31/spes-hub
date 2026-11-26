@@ -169,11 +169,11 @@ Object.assign(SPES.View, {
       <label for="acctSearch">Search by name, SPES ID, username, role, or batch</label>
       <input id="acctSearch" type="search" value="${this.esc(q)}" placeholder="Type a name, SPES ID, or batch..." autocomplete="off">
       <div class="card" style="margin-top:.8rem"><div class="tablewrap"><table class="stack">
-        <tr><th>Name</th><th>SPES ID</th><th>Gender</th><th>Username</th><th>Role</th><th>Batch</th><th>Status</th></tr>
+        <tr><th>Name</th><th>SPES ID</th><th>Gender</th><th>Username</th><th>Role</th><th>Batch</th><th>Status</th><th>Action</th></tr>
         ${users.map(u => {
           const hay = `${u.name} ${u.spesId || ''} ${u.username || ''} ${u.role || ''} ${u.batch || ''}`.toLowerCase();
-          return `<tr data-acct-search="${this.esc(hay)}"><td data-label="Name"><b>${this.esc(u.name)}</b></td><td data-label="SPES ID">${this.esc(u.spesId || '—')}</td><td data-label="Gender">${this.esc(u.gender || '—')}</td><td data-label="Username">@${this.esc(u.username)}</td><td data-label="Role"><span class="tag">${this.esc(u.role)}</span></td><td data-label="Batch">${this.esc(u.batch || '—')}</td><td data-label="Status"><span class="tag ${u.status === 'approved' ? 'ok' : u.status === 'rejected' ? 'bad' : 'gold'}">${this.esc(u.status || 'approved')}</span></td></tr>`;
-        }).join('') || '<tr><td colspan="7" class="muted">No accounts found.</td></tr>'}
+          return `<tr data-acct-search="${this.esc(hay)}"><td data-label="Name"><b>${this.esc(u.name)}</b></td><td data-label="SPES ID">${this.esc(u.spesId || '—')}</td><td data-label="Gender">${this.esc(u.gender || '—')}</td><td data-label="Username">@${this.esc(u.username)}</td><td data-label="Role"><span class="tag">${this.esc(u.role)}</span></td><td data-label="Batch">${this.esc(u.batch || '—')}</td><td data-label="Status"><span class="tag ${u.status === 'approved' ? 'ok' : u.status === 'rejected' ? 'bad' : 'gold'}">${this.esc(u.status || 'approved')}</span></td><td data-label="Action">${u.role === 'beneficiary' ? `<button type="button" class="btn bad" style="margin:0;padding:.38rem .75rem;font-size:.82rem" data-act="deleteuser" data-id="${u.id}">Delete</button>` : '—'}</td></tr>`;
+        }).join('') || '<tr><td colspan="8" class="muted">No accounts found.</td></tr>'}
       </table></div></div>`;
   },
   approvals(list, declined, bname, m) {
@@ -182,9 +182,9 @@ Object.assign(SPES.View, {
       ${list.map(x => `<div class="card row">${this.av(x)}<div><b>${this.esc(x.name)}</b><div class="muted">@${this.esc(x.username)} · ${this.esc(bname(x.batch))}</div></div>
         <span class="row" style="margin-left:auto"><button class="btn" style="margin:0" data-act="approve" data-id="${x.id}">Approve</button><button class="btn bad" style="margin:0" data-act="decline" data-id="${x.id}">Decline</button></span></div>`).join('') || '<p class="muted">No one is waiting for approval.</p>'}
       <h2 style="margin-top:1.6rem">Declined (${declined.length})</h2>
-      <p class="muted">Declined accounts stay here in case the beneficiary contacts you. You can approve them, move them back to pending, or delete them permanently.</p>
+      <p class="muted">Declined accounts stay here in case the beneficiary contacts you. You can approve them or move them back to pending.</p>
       ${declined.map(x => `<div class="card row">${this.av(x)}<div><b>${this.esc(x.name)}</b> <span class="tag bad">Declined</span><div class="muted">@${this.esc(x.username)} · ${this.esc(bname(x.batch))}</div></div>
-        <span class="row" style="margin-left:auto"><button class="btn" style="margin:0" data-act="approve" data-id="${x.id}">Approve</button><button class="btn alt" style="margin:0" data-act="reopen" data-id="${x.id}">Back to pending</button><button class="btn bad" style="margin:0" data-act="deleteuser" data-id="${x.id}">Delete</button></span></div>`).join('') || '<p class="muted">No declined accounts.</p>'}`;
+        <span class="row" style="margin-left:auto"><button class="btn" style="margin:0" data-act="approve" data-id="${x.id}">Approve</button><button class="btn alt" style="margin:0" data-act="reopen" data-id="${x.id}">Back to pending</button></span></div>`).join('') || '<p class="muted">No declined accounts.</p>'}`;
   },
   feedbackList(list) {
     return `<h1>Feedback</h1>${list.map(f => `<div class="card"><div class="row"><b>${this.esc(f.name)}</b><span class="tag gold">${'★'.repeat(+f.rating)}</span><span class="muted" style="margin-left:auto">${this.when(f.ts)}</span></div><p>${this.esc(f.text)}</p></div>`).join('') || '<p class="muted">No feedback yet.</p>'}`;
