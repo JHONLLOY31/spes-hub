@@ -180,10 +180,14 @@ SPES.View = {
     if (!list.length) return '<p class="muted">No submitted journals yet.</p>';
     return list.map(j => {
       const pts = Number(j.pointsAwarded) || 0;
+      const choices = [20, 40, 60, 80, 100];
       const awardBar = isAdmin
-        ? `<div class="row" style="margin-top:.75rem;justify-content:space-between;border-top:1px solid var(--line);padding-top:.6rem">
-            <span class="tag ${pts >= 100 ? 'ok' : ''}">${pts >= 100 ? '★ +100 Journal Points Awarded (Admin only)' : 'No journal points yet'}</span>
-            <button type="button" class="btn ${pts >= 100 ? 'alt' : ''}" style="margin:0" data-act="awardjournal" data-uid="${j.userId}" data-day="${j.day}">${pts >= 100 ? 'Remove +100 pts' : '★ Award +100 pts (Nice Journal)'}</button>
+        ? `<div class="row" style="margin-top:.75rem;justify-content:space-between;border-top:1px solid var(--line);padding-top:.65rem;gap:.5rem">
+            <span class="tag ${pts > 0 ? 'ok' : ''}">${pts > 0 ? `★ +${pts} Journal Points (Admin only)` : 'Not scored yet (Admin only)'}</span>
+            <div class="row" style="gap:.35rem">
+              ${choices.map(p => `<button type="button" class="btn ${pts === p ? '' : 'alt'}" style="margin:0;padding:.38rem .75rem;font-size:.85rem" data-act="awardjournal" data-uid="${j.userId}" data-day="${j.day}" data-pts="${p}">+${p}</button>`).join('')}
+              ${pts > 0 ? `<button type="button" class="btn bad" style="margin:0;padding:.38rem .7rem;font-size:.82rem" data-act="awardjournal" data-uid="${j.userId}" data-day="${j.day}" data-pts="0">Clear</button>` : ''}
+            </div>
           </div>`
         : '';
       return `<div class="card"><strong>Day ${j.day} · ${j.date}</strong> ${names ? '· ' + this.esc(names[j.userId] || '') : ''} ${j.event ? `<span class="tag gold">${this.esc(j.event)}</span>` : ''}

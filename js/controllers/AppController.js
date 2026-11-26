@@ -421,11 +421,9 @@ SPES.App = {
     else if (a === 'pis_batch') { s.pisBatch = d.code || null; s.pisUser = null; s.pisQ = ''; }
     else if (a === 'pis_user') { s.pisUser = d.id || null; }
     else if (a === 'awardjournal' && u.role === 'admin') {
-      const uid = d.uid, day = +d.day;
-      const cur = SPES.JournalModel.get(uid, day);
-      const nextPts = cur && (Number(cur.pointsAwarded) || 0) >= 100 ? 0 : 100;
+      const uid = d.uid, day = +d.day, nextPts = Number(d.pts) || 0;
       SPES.DB.set('journals', SPES.JournalModel.all().map(j => j.userId === uid && j.day === day ? { ...j, pointsAwarded: nextPts } : j));
-      this.flash(nextPts ? 'Awarded +100 journal points (Admin only).' : 'Removed +100 journal points.', true);
+      this.flash(nextPts ? `Awarded +${nextPts} journal points (Admin only).` : 'Cleared journal points.', true);
       this.render();
       const r = await SPES.API.post(`/api/journals/${uid}/${day}/award`, { points: nextPts });
       if (!r.ok) { this.flash(r.error); await SPES.API.bootstrap(); this.render(); }

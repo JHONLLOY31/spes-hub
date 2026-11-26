@@ -723,17 +723,18 @@ route('PATCH', '/api/journals/:day/status', ['beneficiary'], async ({ user, para
   return [200, { journal: mapJournal(data) }];
 });
 
-// Admin-only: award or undo +100 journal points for a nice journal (hidden from beneficiaries)
+// Admin-only: award 20, 40, 60, 80, or 100 journal points (or 0 to clear) — hidden from beneficiaries
 route('POST', '/api/journals/:userId/:day/award', ['admin'], async ({ user, params, body }) => {
   const day = Number(params.day);
   const uid = str(params.userId, 60);
+  const pts = Number(body.points);
+  if (![0, 20, 40, 60, 80, 100].includes(pts)) fail(400, 'Points must be 0, 20, 40, 60, 80, or 100.');
   const { data: cur } = await sb.from('journals').select('*').eq('user_id', uid).eq('day', day).maybeSingle();
   if (!cur) fail(404, 'Journal entry not found.');
-  const nextPts = body.points !== undefined ? (Number(body.points) > 0 ? 100 : 0) : (cur.points_awarded >= 100 ? 0 : 100);
   const { data, error } = await sb.from('journals').update({
-    points_awarded: nextPts,
-    awarded_by: nextPts > 0 ? user.name : null,
-    awarded_at: nextPts > 0 ? new Date().toISOString() : null
+    points_awarded: pts,
+    awarded_by: pts > 0 ? user.name : null,
+    awarded_at: pts > 0 ? new Date().toISOString() : null
   }).eq('user_id', uid).eq('day', day).select().single();
   if (error) fail(500, 'Could not update journal points: ' + error.message);
   return [200, { journal: mapJournal(data, true) }];
