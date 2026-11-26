@@ -231,7 +231,7 @@ route('POST', '/api/auth/google/session', undefined, async ({ body }) => {
   }
   if (prof.role !== 'beneficiary') fail(403, 'This is a staff account. Please use the staff login page.');
   if (prof.status === 'pending') fail(403, 'Your account is waiting for administrator approval.');
-  if (prof.status === 'rejected') fail(403, 'Your registration was declined. Please contact the administrator.');
+  if (prof.status === 'rejected') fail(403, 'Your registration was declined. Contact the administrator to reconsider, or click Continue with Google to choose another Google account.');
 
   const cookie = await startSession(prof.id);
   await logActivity(prof.id, 'Logged in with Google');
@@ -405,7 +405,7 @@ route('GET', '/api/users', ['admin', 'head'], async ({ url }) => {
 });
 
 route('PATCH', '/api/users/:id/status', ['admin'], async ({ params, body }) => {
-  if (!['approved', 'rejected'].includes(body.status)) fail(400, 'Status must be approved or rejected.');
+  if (!['pending', 'approved', 'rejected'].includes(body.status)) fail(400, 'Status must be pending, approved, or rejected.');
   const { data, error } = await sb.from('profiles')
     .update({ status: body.status })
     .eq('id', params.id)
@@ -731,7 +731,7 @@ async function api(req, res, url) {
   if (req.method === 'GET' && url.pathname === '/api/auth/google') {
     const proto = String(req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
     const redirectTo = `${proto}://${req.headers.host}/index.html`;
-    const authUrl = `${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
+    const authUrl = `${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}&prompt=select_account`;
     res.writeHead(302, { Location: authUrl, 'Cache-Control': 'no-store' });
     return res.end();
   }

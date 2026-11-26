@@ -146,7 +146,7 @@ SPES.App = {
       // Don't interrupt active typing, open modals, or an active game round
       const ae = document.activeElement;
       const typing = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT');
-      if (!typing && !this.s.play && !this.s.confirm && !this.s.delConfirm && !this.s.attConfirm && this.s.tab === prevTab) {
+      if (!typing && !this.s.play && !this.s.confirm && !this.s.delConfirm && !this.s.declineConfirm && !this.s.attConfirm && this.s.tab === prevTab) {
         this.anim = false;
         this.render();
       }
@@ -279,7 +279,7 @@ SPES.App = {
 
   async act(a, d, btn) {
     const s = this.s, u = this.user();
-    this.anim = !['review', 'answer', 'attday', 'jday', 'flip', 'cell', 'rmpic', 'mute', 'sub', 'theme', 'lang', 'snd', 'markday', 'avborder', 'delnote', 'google', 'markpresent', 'deleteuser', 'canceldel', 'confirmdel', 'keylock', 'keymode', 'approve', 'decline'].includes(a);
+    this.anim = !['review', 'answer', 'attday', 'jday', 'flip', 'cell', 'rmpic', 'mute', 'sub', 'theme', 'lang', 'snd', 'markday', 'avborder', 'delnote', 'google', 'markpresent', 'deleteuser', 'canceldel', 'confirmdel', 'keylock', 'keymode', 'approve', 'decline', 'canceldecline', 'confirmdecline', 'reopen'].includes(a);
 
     if (a === 'as') { s.as = d.v; s.m = null; }
     else if (a === 'deleteuser' && u.role === 'admin') { const t = SPES.UserModel.byId(d.id); if (t && t.role === 'beneficiary') s.delConfirm = t.id; }
@@ -367,12 +367,29 @@ SPES.App = {
       if (!r.ok) { this.flash(r.error); await SPES.API.bootstrap(); this.render(); }
       return;
     }
-    else if ((a === 'approve' || a === 'decline') && u.role === 'admin') {
-      const ok = a === 'approve', target = SPES.UserModel.byId(d.id);
-      SPES.UserModel.updateLocal(d.id, { status: ok ? 'approved' : 'rejected' });
-      if (target) this.flash(`${target.name} was ${ok ? 'approved' : 'declined'}.`, true);
+    else if (a === 'decline' && u.role === 'admin') {
+      const t = SPES.UserModel.byId(d.id);
+      if (t && t.role === 'beneficiary') s.declineConfirm = t.id;
+    }
+    else if (a === 'canceldecline') s.declineConfirm = null;
+    else if (a === 'confirmdecline' && u.role === 'admin') {
+      const id = s.declineConfirm, target = SPES.UserModel.byId(id);
+      s.declineConfirm = null;
+      if (target) {
+        SPES.UserModel.updateLocal(id, { status: 'rejected' });
+        this.flash(`${target.name} was declined and moved to the Declined list.`, true);
+        this.render();
+        const r = await SPES.API.patch(`/api/users/${id}/status`, { status: 'rejected' });
+        if (!r.ok) { this.flash(r.error); await SPES.API.bootstrap(); this.render(); }
+        return;
+      }
+    }
+    else if ((a === 'approve' || a === 'reopen') && u.role === 'admin') {
+      const st = a === 'approve' ? 'approved' : 'pending', target = SPES.UserModel.byId(d.id);
+      SPES.UserModel.updateLocal(d.id, { status: st });
+      if (target) this.flash(st === 'approved' ? `${target.name} was approved.` : `${target.name} was moved back to pending.`, true);
       this.render();
-      const r = await SPES.API.patch(`/api/users/${d.id}/status`, { status: ok ? 'approved' : 'rejected' });
+      const r = await SPES.API.patch(`/api/users/${d.id}/status`, { status: st });
       if (!r.ok) { this.flash(r.error); await SPES.API.bootstrap(); this.render(); }
       return;
     }
@@ -534,6 +551,7 @@ SPES.App = {
       };
       const modalHtml = (s.confirm ? V.logoutModal() : '')
         + (s.delConfirm && SPES.UserModel.byId(s.delConfirm) ? V.deleteModal(SPES.UserModel.byId(s.delConfirm)) : '')
+        + (s.declineConfirm && SPES.UserModel.byId(s.declineConfirm) ? V.declineModal(SPES.UserModel.byId(s.declineConfirm)) : '')
         + (s.attConfirm ? V.attendanceConfirmModal() : '');
 
       const existingMain = !forceFull && document.querySelector('#app > .layout > main.content');
@@ -644,7 +662,10 @@ SPES.App = {
       return V.keyGate(K.has(), s.keyMode, K.locked(), s.m);
     }
     if (tab === 'admin') return V.admin(SPES.BatchModel.all(), M.all(), s.m, s.room, { date: s.roomDate || SPES.DB.get('serverDate') || A.day(), q: s.roomQ || '' });
-    if (tab === 'approvals') return V.approvals(M.all().filter(x => x.status === 'pending'), c => (SPES.BatchModel.find(c) || { name: c }).name, s.m);
+    if (tab === 'approvals') {
+      const bens = M.all().filter(x => x.role === 'beneficiary');
+      return V.approvals(bens.filter(x => x.status === 'pending'), bens.filter(x => x.status === 'rejected'), c => (SPES.BatchModel.find(c) || { name: c }).name, s.m);
+    }
     if (tab === 'announce') return V.announce(SPES.BatchModel.all(), SPES.DB.get('ann', []), s.m);
     if (tab === 'feedback') return V.feedbackList(SPES.FeedbackModel.all());
     if (tab === 'notifs') { const html = V.notifs(N.for(u), u.seen); N.markSeen(u); return html; }

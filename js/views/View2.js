@@ -46,6 +46,11 @@ Object.assign(SPES.View, {
       <p class="muted">This permanently deletes <b>${this.esc(t.name)}</b>${t.spesId ? ' (' + this.esc(t.spesId) + ')' : ''} and all of their attendance, journal and game records. This cannot be undone.</p>
       <div class="row" style="justify-content:center"><button class="btn alt" data-act="canceldel">Cancel</button><button class="btn bad" data-act="confirmdel">Yes, delete</button></div></div></div>`;
   },
+  declineModal(t) {
+    return `<div class="modal" role="dialog" aria-modal="true"><div class="mbox"><div class="mic bad">${this.icon('approvals')}</div><h2>Are you sure you want to decline?</h2>
+      <p class="muted"><b>${this.esc(t.name)}</b> (@${this.esc(t.username)}) will be moved to the <b>Declined</b> list and won't be able to log in. If they contact you later, you can still approve them or return them to pending—and they can also try another Google account.</p>
+      <div class="row" style="justify-content:center"><button class="btn alt" data-act="canceldecline">Cancel</button><button class="btn bad" data-act="confirmdecline">Yes, decline</button></div></div></div>`;
+  },
 
   shell(user, tabs, tab, body, bd = {}) {
     const T = k => SPES.I18n.t(k), role = { beneficiary: 'SPES Beneficiary', head: 'Office Head', admin: 'Administrator' }[user.role];
@@ -103,10 +108,15 @@ Object.assign(SPES.View, {
     const ic = { announce: 'announce', event: 'calendar', approval: 'approvals', feedback: 'feedback', attendance: 'attendance', journal: 'journal' };
     return `<h1>Notifications</h1>${list.map(n => `<div class="card nrow ${n.ts > (seen || '') ? 'new' : ''}"><span class="ni">${this.icon(ic[n.kind] || 'notifs')}</span><div><b>${this.esc(n.text)}</b><div class="muted">${this.when(n.ts)}</div></div></div>`).join('') || '<p class="muted">You are all caught up.</p>'}`;
   },
-  approvals(list, bname, m) {
+  approvals(list, declined, bname, m) {
     return `<h1>Approvals</h1><p class="muted">New beneficiaries must be approved before they can log in.</p>${this.msg(m)}
+      <h2 style="margin-top:1rem">Pending (${list.length})</h2>
       ${list.map(x => `<div class="card row">${this.av(x)}<div><b>${this.esc(x.name)}</b><div class="muted">@${this.esc(x.username)} · ${this.esc(bname(x.batch))}</div></div>
-        <span class="row" style="margin-left:auto"><button class="btn" style="margin:0" data-act="approve" data-id="${x.id}">Approve</button><button class="btn bad" style="margin:0" data-act="decline" data-id="${x.id}">Decline</button></span></div>`).join('') || '<p class="muted">No one is waiting for approval.</p>'}`;
+        <span class="row" style="margin-left:auto"><button class="btn" style="margin:0" data-act="approve" data-id="${x.id}">Approve</button><button class="btn bad" style="margin:0" data-act="decline" data-id="${x.id}">Decline</button></span></div>`).join('') || '<p class="muted">No one is waiting for approval.</p>'}
+      <h2 style="margin-top:1.6rem">Declined (${declined.length})</h2>
+      <p class="muted">Declined accounts stay here in case the beneficiary contacts you. You can approve them, move them back to pending, or delete them permanently.</p>
+      ${declined.map(x => `<div class="card row">${this.av(x)}<div><b>${this.esc(x.name)}</b> <span class="tag bad">Declined</span><div class="muted">@${this.esc(x.username)} · ${this.esc(bname(x.batch))}</div></div>
+        <span class="row" style="margin-left:auto"><button class="btn" style="margin:0" data-act="approve" data-id="${x.id}">Approve</button><button class="btn alt" style="margin:0" data-act="reopen" data-id="${x.id}">Back to pending</button><button class="btn bad" style="margin:0" data-act="deleteuser" data-id="${x.id}">Delete</button></span></div>`).join('') || '<p class="muted">No declined accounts.</p>'}`;
   },
   feedbackList(list) {
     return `<h1>Feedback</h1>${list.map(f => `<div class="card"><div class="row"><b>${this.esc(f.name)}</b><span class="tag gold">${'★'.repeat(+f.rating)}</span><span class="muted" style="margin-left:auto">${this.when(f.ts)}</span></div><p>${this.esc(f.text)}</p></div>`).join('') || '<p class="muted">No feedback yet.</p>'}`;
