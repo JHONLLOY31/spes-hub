@@ -65,13 +65,40 @@ Object.assign(SPES.View, {
       <div class="row" style="justify-content:center"><button class="btn alt" data-act="cancelout">Stay</button><button class="btn" data-act="logout">Log out</button></div></div></div>`;
   },
 
-  attendance(slots, days, sel, recs, canProof, m) {
+  attendance(slots, days, sel, recs, canProof, m, excuse, today) {
     const d = days[sel - 1], A = SPES.AttendanceModel;
-    const [dayLabel] = A.dayStatus(recs[0]?.userId || '', d.date, canProof);
     const isWFH = A.isWorkFromHome(d.date), rest = A.isRestDay(d.date);
-    return `<h1>Attendance</h1><p class="muted">Submit separate photo proof for each morning and afternoon attendance slot. Every submission stays Pending until the Administrator reviews the image.</p><p class="muted">Your Day 1 is <b>${days[0].date}</b>.</p>${this.dayPicker(days, sel, 'attday')}${this.msg(m)}
-      <div class="card tile row"><div><h2 style="margin:0">Day ${sel}</h2><span class="tag ${d.state === 'full' ? 'ok' : d.state === 'abs' ? 'bad' : 'gold'}">${rest ? 'Rest day' : isWFH ? 'Work from home' : d.label}</span></div></div>
-      ${isWFH ? '<div class="card"><h3>Friday · Work from home</h3><p>No attendance submission is required. Friday remains part of the 20 scheduled workdays.</p></div>' : rest ? '<div class="card"><h3>Weekend rest day</h3><p>No attendance is required on Saturday or Sunday. These days are not counted among the 20 workdays.</p></div>' : `<div class="grid">${Object.entries(slots).map(([k, slot]) => { const r = recs.find(a => a.slot === k), w = A.windowState(k), lock = canProof && !r && !w.open; return `<div class="card tile ${lock ? 'locked' : ''}"><h3>${slot.label}</h3><p class="muted">${slot.rule}</p>${r ? `<span class="tag ${r.status === 'approved' ? 'ok' : r.status === 'rejected' ? 'bad' : 'gold'}">${r.status === 'approved' ? 'Approved' : r.status === 'rejected' ? 'Rejected' : 'Pending admin review'}</span><p class="muted">Submitted: ${this.when(r.submittedAt)}</p>${r.photo ? `<a href="${r.photo}" target="_blank" rel="noopener"><img class="thumb" src="${r.photo}" alt="${slot.label} proof"></a>` : ''}` : lock ? this.lockTile(w) : canProof ? `<form data-form="attend" data-slot="${k}"><input type="file" name="photo" class="pick" accept="image/*" capture="environment" required><div class="pv"></div><div class="row"><button class="btn">Upload image</button><button type="reset" class="btn alt">Cancel</button></div></form>` : '<span class="tag">Not submitted</span>'}</div>`; }).join('')}</div>`}`;
+    const extraDays = Math.max(0, days.length - 20);
+    const canExcuse = !rest && !isWFH && d.date <= (today || A.day()) && d.state !== 'full' && (!excuse || excuse.status === 'rejected');
+    const excuseCard = excuse
+      ? `<div class="card excuse-card"><div class="row"><h3 style="margin:0">Excuse request · ${this.esc(excuse.category)}</h3>
+          <span class="tag ${excuse.status === 'approved' ? 'exc' : excuse.status === 'rejected' ? 'bad' : 'gold'}">${excuse.status === 'approved' ? (excuse.makeupGranted ? 'Approved · +1 Make-up Day granted' : 'Approved (Excused)') : excuse.status === 'rejected' ? 'Declined' : 'Pending admin approval'}</span></div>
+          <p style="margin:.5rem 0">${this.esc(excuse.reason)}</p>
+          ${excuse.photo ? `<a href="${excuse.photo}" target="_blank" rel="noopener"><img class="thumb" src="${excuse.photo}" alt="Excuse proof" style="max-width:260px"></a>` : ''}</div>`
+      : '';
+    const excuseForm = canExcuse
+      ? `<details class="card excuse-card"><summary><b>Absent or excused on Day ${sel} (${d.date})?</b> <span class="muted">Click here to file an excuse &amp; request a +1 make-up workday</span></summary>
+          <form data-form="excuse" data-date="${d.date}" style="margin-top:.8rem">
+            <label>Reason category</label>
+            <select name="category" required>
+              <option>Medical / Sick</option>
+              <option>School Exam / Requirement</option>
+              <option>Family Emergency</option>
+              <option>Official Errand / Other</option>
+            </select>
+            <label>Explain your excuse</label>
+            <textarea name="reason" rows="3" required minlength="10" placeholder="Briefly explain why you are unable to attend today (minimum 10 characters)..."></textarea>
+            <label>Supporting photo / excuse letter (optional)</label>
+            <input type="file" name="photo" class="pick" accept="image/*"><div class="pv"></div>
+            <button class="btn" type="submit">Submit excuse for admin approval</button>
+          </form></details>`
+      : '';
+    return `<h1>Attendance</h1><p class="muted">Submit separate photo proof for each morning and afternoon attendance slot. Every submission stays Pending until the Administrator reviews the image.</p>
+      <p class="muted">Your Day 1 is <b>${days[0].date}</b>.${extraDays ? ` · <span class="tag exc">+${extraDays} make-up day${extraDays > 1 ? 's' : ''} added</span>` : ''}</p>${this.dayPicker(days, sel, 'attday')}${this.msg(m)}
+      <div class="card tile row"><div><h2 style="margin:0">Day ${sel} ${d.makeup ? '<span class="tag gold">Make-up Day</span>' : ''}</h2><span class="tag ${d.state === 'full' ? 'ok' : d.state === 'exc' ? 'exc' : d.state === 'abs' ? 'bad' : 'gold'}">${rest ? 'Rest day' : isWFH ? 'Work from home' : d.label}</span></div><span class="muted" style="margin-left:auto">${d.date}</span></div>
+      ${excuseCard}
+      ${isWFH ? '<div class="card"><h3>Friday · Work from home</h3><p>No attendance submission is required. Friday remains part of the 20 scheduled workdays.</p></div>' : rest ? '<div class="card"><h3>Weekend rest day</h3><p>No attendance is required on Saturday or Sunday. These days are not counted among the 20 workdays.</p></div>' : excuse && excuse.status === 'approved' ? '<div class="card"><h3>Excused workday</h3><p>Your excuse for this day was approved by the Administrator.' + (excuse.makeupGranted ? ' A <b>+1 make-up workday</b> has been added at the end of your schedule so you can still complete all 20 paid days.' : '') + '</p></div>' : `<div class="grid">${Object.entries(slots).map(([k, slot]) => { const r = recs.find(a => a.slot === k), w = A.windowState(k), lock = canProof && !r && !w.open; return `<div class="card tile ${lock ? 'locked' : ''}"><h3>${slot.label}</h3><p class="muted">${slot.rule}</p>${r ? `<span class="tag ${r.status === 'approved' ? 'ok' : r.status === 'rejected' ? 'bad' : 'gold'}">${r.status === 'approved' ? 'Approved' : r.status === 'rejected' ? 'Rejected' : 'Pending admin review'}</span><p class="muted">Submitted: ${this.when(r.submittedAt)}</p>${r.photo ? `<a href="${r.photo}" target="_blank" rel="noopener"><img class="thumb" src="${r.photo}" alt="${slot.label} proof"></a>` : ''}` : lock ? this.lockTile(w) : canProof ? `<form data-form="attend" data-slot="${k}"><input type="file" name="photo" class="pick" accept="image/*" capture="environment" required><div class="pv"></div><div class="row"><button class="btn">Upload image</button><button type="reset" class="btn alt">Cancel</button></div></form>` : '<span class="tag">Not submitted</span>'}</div>`; }).join('')}</div>`}
+      ${excuseForm}`;
   },
 
   attendanceConfirmModal() {

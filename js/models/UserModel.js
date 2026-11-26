@@ -8,7 +8,10 @@ SPES.UserModel = {
   },
   seed() {},
   startDate(u) { return u.startDate || SPES.BatchModel.start(u.batch); },
-  workDates(u) { return SPES.BatchModel.workDatesFrom(this.startDate(u)); },
+  workDates(u) {
+    const extra = SPES.AttendanceModel && SPES.AttendanceModel.makeupCount ? SPES.AttendanceModel.makeupCount(u.id) : 0;
+    return SPES.BatchModel.workDatesFrom(this.startDate(u), SPES.BatchModel.DAYS + extra);
+  },
   session() { return SPES.DB.get('me', null); },
   setSession(u) { SPES.DB.set('me', u || null); },
   updateLocal(id, patch) {

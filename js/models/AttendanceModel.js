@@ -15,6 +15,10 @@ SPES.AttendanceModel = {
   isWorkFromHome(date) { return new Date(date + 'T00:00:00').getDay() === 5; },
   manual() { return SPES.DB.get('attmanual', []); },
   isManual(userId, date) { return this.manual().some(x => x.userId === userId && x.date === date); },
+  excuses() { return SPES.DB.get('excuses', []); },
+  excusesForUser(userId) { return this.excuses().filter(x => x.userId === userId); },
+  excuseOn(userId, date) { return this.excuses().find(x => x.userId === userId && x.date === date) || null; },
+  makeupCount(userId) { return this.excuses().filter(x => x.userId === userId && x.status === 'approved' && x.makeupGranted).length; },
   // Admin marks a day as present without a photo (toggle). Returns { added } or { error }.
   markPresent(userId, date, by) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return { error: 'Pick a valid date.' };
@@ -41,6 +45,9 @@ SPES.AttendanceModel = {
     if (this.isRestDay(date)) return ['Rest day', ''];
     if (this.isManual(userId, date)) return ['Present', 'full'];
     if (this.isWorkFromHome(date)) return ['Work from home', ''];
+    const ex = this.excuseOn(userId, date);
+    if (ex && ex.status === 'approved') return ['Excused', 'exc'];
+    if (ex && ex.status === 'pending') return ['Excuse pending', 'part'];
     const r = this.forUser(userId).filter(a => a.date === date && this.SLOTS[a.slot]);
     if (!r.length) return open ? ['Not submitted', ''] : ['Absent', 'abs'];
     if (r.some(a => a.status === 'pending')) return ['Pending review', 'part'];

@@ -57,6 +57,11 @@ const mapAttendance = a => ({
   onTime: a.on_time, status: a.status, reviewedBy: a.reviewed_by, reviewedAt: a.reviewed_at
 });
 const mapManual = m => ({ userId: m.user_id, date: m.date, by: m.marked_by, at: m.marked_at });
+const mapExcuse = e => ({
+  id: e.id, userId: e.user_id, date: e.date, category: e.category, reason: e.reason,
+  photo: photoUrl(e.photo_path), status: e.status, makeupGranted: !!e.makeup_granted,
+  reviewedBy: e.reviewed_by, reviewedAt: e.reviewed_at, createdAt: e.created_at
+});
 const mapJournal = j => ({
   id: `${j.user_id}_${j.day}`, userId: j.user_id, day: j.day, date: j.date,
   text: j.text, event: j.event, photos: (j.photos || []).map(photoUrl),
@@ -319,7 +324,7 @@ route('POST', '/api/auth/google/complete', undefined, async ({ body }) => {
 route('GET', '/api/bootstrap', 'any', async ({ user }) => {
   const staff = user.role !== 'beneficiary';
   const [
-    batchesRes, usersRes, attRes, manRes, jrnRes, evRes, annRes, notifRes, actRes, fbRes, gpRes, ptsRes, presRes, keyRes
+    batchesRes, usersRes, attRes, manRes, excRes, jrnRes, evRes, annRes, notifRes, actRes, fbRes, gpRes, ptsRes, presRes, keyRes
   ] = await Promise.all([
     sb.from('batches').select('*').order('id', { ascending: false }),
     staff
@@ -332,6 +337,9 @@ route('GET', '/api/bootstrap', 'any', async ({ user }) => {
     staff
       ? sb.from('attendance_manual').select('*')
       : sb.from('attendance_manual').select('*').eq('user_id', user.id),
+    staff
+      ? sb.from('attendance_excuses').select('*').order('created_at', { ascending: false })
+      : sb.from('attendance_excuses').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
     staff
       ? sb.from('journals').select('*').order('updated_at', { ascending: false })
       : sb.from('journals').select('*').eq('user_id', user.id),
@@ -376,6 +384,7 @@ route('GET', '/api/bootstrap', 'any', async ({ user }) => {
     }),
     attendance: (attRes.data || []).map(mapAttendance),
     attmanual: (manRes.data || []).map(mapManual),
+    excuses: (excRes.data || []).map(mapExcuse),
     journals: (jrnRes.data || []).map(mapJournal),
     events: (evRes.data || []).map(mapEvent),
     announcements: (annRes.data || []).map(mapAnn),
@@ -394,7 +403,7 @@ async function servePhoto(req, res, url) {
   const user = await userFor(req);
   if (!user) fail(401, 'Please log in.');
   const p = url.searchParams.get('p') || '';
-  if (!p || p.includes('..') || !/^(avatars|attendance|journals)\/[a-zA-Z0-9._/-]+$/.test(p)) {
+  if (!p || p.includes('..') || !/^(avatars|attendance|journals|excuses)\/[a-zA-Z0-9._/-]+$/.test(p)) {
     fail(400, 'Invalid photo path.');
   }
   // Beneficiaries can only view their own attendance/journal photos or avatars
@@ -564,6 +573,62 @@ route('POST', '/api/attendance/manual', ['admin'], async ({ user, body }) => {
   if (error) fail(500, error.message);
   await pushNotif(userId, `The administrator marked you present for ${date}.`, 'attendance');
   return [201, { added: true }];
+});
+
+// ---- Attendance Excuses + Automatic +1 Make-Up Day ----
+route('POST', '/api/attendance/excuse', ['beneficiary'], async ({ user, body }) => {
+  const now = nowInTz();
+  const date = str(body.date, 10) || now.date;
+  const category = str(body.category, 60) || 'Medical / Sick';
+  const reason = str(body.reason, 1000);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) fail(400, 'Invalid date.');
+  if (date > now.date) fail(400, 'You cannot file an excuse for a future date.');
+  if (isRestDay(date)) fail(400, 'Saturday and Sunday are rest days.');
+  if (isWorkFromHome(date)) fail(400, 'Friday is work from home. No excuse is needed.');
+  if (reason.length < 10) fail(400, 'Please explain your excuse in at least 10 characters.');
+
+  const { data: existing } = await sb.from('attendance_excuses').select('id, status').eq('user_id', user.id).eq('date', date).maybeSingle();
+  if (existing && existing.status !== 'rejected') fail(409, 'You already filed an excuse for this date.');
+
+  let photoPath = null;
+  if (typeof body.photo === 'string' && body.photo.startsWith('data:image/')) {
+    photoPath = `excuses/${user.id}/${date}_${Date.now()}.jpg`;
+    await uploadDataUrl(photoPath, body.photo);
+  }
+
+  const { data, error } = await sb.from('attendance_excuses').upsert({
+    user_id: user.id, date, category, reason, photo_path: photoPath,
+    status: 'pending', makeup_granted: false, reviewed_by: null, reviewed_at: null,
+    created_at: new Date().toISOString()
+  }, { onConflict: 'user_id,date' }).select().single();
+  if (error) fail(500, 'Could not submit excuse: ' + error.message);
+
+  await pushNotif('staff', `${user.name} filed an excuse for ${date} (${category})`, 'attendance');
+  await logActivity(user.id, `Filed excuse for ${date} (${category})`);
+  return [201, { excuse: mapExcuse(data) }];
+});
+
+route('PATCH', '/api/attendance/excuse/:id', ['admin'], async ({ user, params, body }) => {
+  if (!['approved', 'rejected'].includes(body.status)) fail(400, 'Invalid status.');
+  const grantMakeup = body.status === 'approved' && body.grantMakeup !== false;
+  const { data, error } = await sb.from('attendance_excuses')
+    .update({
+      status: body.status,
+      makeup_granted: grantMakeup,
+      reviewed_by: user.name,
+      reviewed_at: new Date().toISOString()
+    })
+    .eq('id', params.id)
+    .select()
+    .maybeSingle();
+  if (error || !data) fail(404, 'Excuse request not found.');
+  const msg = body.status === 'approved'
+    ? (grantMakeup
+        ? `Your excuse for ${data.date} was approved! +1 make-up workday has been added to your schedule.`
+        : `Your excuse for ${data.date} was approved.`)
+    : `Your excuse for ${data.date} was declined.`;
+  await pushNotif(data.user_id, msg, 'attendance');
+  return [200, { excuse: mapExcuse(data) }];
 });
 
 // ---- Journals ----

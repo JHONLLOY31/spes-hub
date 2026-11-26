@@ -17,10 +17,11 @@ SPES.BatchModel = {
   },
   // The 20 work-day dates (yyyy-mm-dd) of a batch, starting from its Day 1 date.
   workDates(code) { return this.workDatesFrom(this.start(code)); },
-  // The 20 work days counted from any start date (weekends are skipped).
-  workDatesFrom(start) {
+  // The work-day dates (yyyy-mm-dd) counted from any start date (weekends are skipped).
+  // count defaults to 20, plus any approved make-up days granted to the beneficiary.
+  workDatesFrom(start, count = this.DAYS) {
     const out = [], d = new Date(start + 'T00:00:00');
-    while (out.length < this.DAYS) {
+    while (out.length < count) {
       const w = d.getDay();
       if (!(this.SKIP_WEEKENDS && (w === 0 || w === 6))) out.push(d.toLocaleDateString('en-CA'));
       d.setDate(d.getDate() + 1);

@@ -293,7 +293,7 @@ SPES.App = {
 
   async act(a, d, btn) {
     const s = this.s, u = this.user();
-    this.anim = !['review', 'answer', 'attday', 'jday', 'flip', 'cell', 'rmpic', 'mute', 'sub', 'theme', 'lang', 'snd', 'markday', 'avborder', 'delnote', 'google', 'markpresent', 'deleteuser', 'canceldel', 'confirmdel', 'keylock', 'keymode', 'approve', 'decline', 'canceldecline', 'confirmdecline', 'reopen'].includes(a);
+    this.anim = !['review', 'reviewexcuse', 'answer', 'attday', 'jday', 'flip', 'cell', 'rmpic', 'mute', 'sub', 'theme', 'lang', 'snd', 'markday', 'avborder', 'delnote', 'google', 'markpresent', 'deleteuser', 'canceldel', 'confirmdel', 'keylock', 'keymode', 'approve', 'decline', 'canceldecline', 'confirmdecline', 'reopen'].includes(a);
 
     if (a === 'as') { s.as = d.v; s.m = null; }
     else if (a === 'deleteuser' && u.role === 'admin') { const t = SPES.UserModel.byId(d.id); if (t && t.role === 'beneficiary') s.delConfirm = t.id; }
@@ -396,6 +396,16 @@ SPES.App = {
       if (!r.ok) { this.flash(r.error); await SPES.API.bootstrap(); this.render(); }
       return;
     }
+    else if (a === 'reviewexcuse' && u.role === 'admin') {
+      const mk = document.getElementById('mk_' + d.id);
+      const grantMakeup = d.st === 'approved' && (!mk || mk.checked);
+      SPES.DB.set('excuses', SPES.AttendanceModel.excuses().map(x => x.id === d.id ? { ...x, status: d.st, makeupGranted: grantMakeup, reviewedBy: u.name } : x));
+      this.flash(d.st === 'approved' ? (grantMakeup ? 'Excuse approved and +1 make-up workday granted.' : 'Excuse approved.') : 'Excuse declined.', true);
+      this.render();
+      const r = await SPES.API.patch(`/api/attendance/excuse/${d.id}`, { status: d.st, grantMakeup });
+      if (!r.ok) { this.flash(r.error); await SPES.API.bootstrap(); this.render(); }
+      return;
+    }
     else if (a === 'decline' && u.role === 'admin') {
       const t = SPES.UserModel.byId(d.id);
       if (t && t.role === 'beneficiary') s.declineConfirm = t.id;
@@ -475,6 +485,17 @@ SPES.App = {
         if (!el.photo.files[0]) { this.flash('Please choose an image first.'); this.render(); return; }
         this.pendingAtt = { slot: el.dataset.slot, file: el.photo.files[0], date: this.ctx(u).dates[day - 1], day };
         s.attConfirm = true; this.anim = false; this.render(); return;
+      } else if (form === 'excuse') {
+        const photo = el.photo && el.photo.files[0] ? await this.readImage(el.photo.files[0]) : null;
+        const r = await M.API.post('/api/attendance/excuse', {
+          date: el.dataset.date, category: f.category, reason: (f.reason || '').trim(), photo
+        });
+        if (!r.ok) this.flash(r.error);
+        else {
+          const rest = SPES.AttendanceModel.excuses().filter(x => !(x.userId === u.id && x.date === r.data.excuse.date));
+          SPES.DB.set('excuses', [r.data.excuse, ...rest]);
+          this.flash('Excuse submitted for administrator approval.', true);
+        }
       } else if (form === 'journal') {
         const day = +el.dataset.day;
         const date = this.days(u, 'jr')[day - 1].date;
@@ -654,7 +675,7 @@ SPES.App = {
       let state = '', label = '';
       if (jr) { const j = SPES.JournalModel.get(u.id, i + 1); state = j ? (j.status === 'submitted' ? 'full' : 'part') : ''; label = j ? (j.status === 'submitted' ? 'Done' : 'Draft') : 'Empty'; }
       else [label, state] = A.dayStatus(u.id, date, date >= today);
-      return { n: i + 1, date, state, label, today: date === today, future: false };
+      return { n: i + 1, date, state, label, today: date === today, future: false, makeup: i >= 20 };
     });
   },
   selDay(key, u) { return this.s[key] || this.ctx(u).idx || 1; },
@@ -692,7 +713,7 @@ SPES.App = {
   body(u, tab) {
     const V = SPES.View, s = this.s, G = SPES.GameModel, A = SPES.AttendanceModel, M = SPES.UserModel, N = SPES.NotifModel, names = Object.fromEntries(M.all().map(x => [x.id, x.name]));
     if (tab === 'dashboard') return this.dashboard(u);
-    if (tab === 'attendance') { this.attSig = this.attSigNow(); const days = this.days(u, 'att'), n = this.selDay('day', u), d = days[n - 1], allow = d.today && !A.isRestDay(d.date) && !A.isWorkFromHome(d.date); return V.attendance(A.SLOTS, days, n, A.forUser(u.id).filter(a => a.date === d.date), allow, s.m); }
+    if (tab === 'attendance') { this.attSig = this.attSigNow(); const days = this.days(u, 'att'), n = this.selDay('day', u), d = days[n - 1], today = SPES.DB.get('serverDate') || A.day(), allow = d.today && !A.isRestDay(d.date) && !A.isWorkFromHome(d.date); return V.attendance(A.SLOTS, days, n, A.forUser(u.id).filter(a => a.date === d.date), allow, s.m, A.excuseOn(u.id, d.date), today); }
     if (tab === 'journal') {
       const days = this.days(u, 'jr'), n = this.selDay('jday', u), d = days[n - 1], saved = SPES.JournalModel.get(u.id, n);
       if (this.jkey !== n) { this.jkey = n; this.jpics = saved ? [...saved.photos] : []; }
@@ -700,7 +721,7 @@ SPES.App = {
       return V.journal(days, n, en, SPES.EventModel.on(d.date), this.jpics, s.m);
     }
     if (tab === 'journals') return '<h2>Beneficiary journals</h2>' + V.entries(SPES.JournalModel.all().filter(j => j.status === 'submitted'), names);
-    if (tab === 'review') return u.role === 'admin' ? V.review(A.all().slice().reverse().map(a => ({ ...a, name: names[a.userId] || 'Beneficiary', label: A.SLOTS[a.slot] ? A.SLOTS[a.slot].label : 'Attendance' })), s.m) : '<h1>Not authorized</h1>';
+    if (tab === 'review') return u.role === 'admin' ? V.review(A.all().slice().reverse().map(a => ({ ...a, name: names[a.userId] || 'Beneficiary', label: A.SLOTS[a.slot] ? A.SLOTS[a.slot].label : 'Attendance' })), s.m, A.excuses().map(ex => ({ ...ex, name: names[ex.userId] || 'Beneficiary' }))) : '<h1>Not authorized</h1>';
     if (tab === 'answers') {
       if (u.role !== 'admin') return '<h1>Not authorized</h1>';
       const K = SPES.KeyModel;

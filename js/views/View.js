@@ -122,7 +122,7 @@ SPES.View = {
     return `<div class="badges ${sm ? 'sm' : ''}">${list.map(b => `<div class="bd ${b.got ? '' : 'off'}"><span>${this.icon(b.ic)}</span>${b.name}</div>`).join('')}</div>`;
   },
   dayPicker(days, sel, act) {
-    return `<div class="days">${days.map(d => `<button class="day ${d.state} ${d.n === sel ? 'sel' : ''} ${d.today ? 'today' : ''} ${d.future ? 'lock' : ''}" data-act="${act}" data-n="${d.n}" ${d.future ? 'disabled' : ''}><b>${d.n}</b><span>${d.label}</span></button>`).join('')}</div>`;
+    return `<div class="days">${days.map(d => `<button class="day ${d.state} ${d.makeup ? 'mk' : ''} ${d.n === sel ? 'sel' : ''} ${d.today ? 'today' : ''} ${d.future ? 'lock' : ''}" data-act="${act}" data-n="${d.n}" ${d.future ? 'disabled' : ''}><b>${d.n}</b><span>${d.makeup && d.label === 'Not submitted' ? 'Make-up' : d.label}</span></button>`).join('')}</div>`;
   },
 
   userDash(d) {
@@ -243,8 +243,23 @@ SPES.View = {
       <div class="card">${rows.slice(3).map((r, i) => `<div class="act ${r.name === me ? 'me2' : ''}"><span>${i + 4}. ${this.esc(r.name)}</span><span>${r.rooms}/20 rooms · <b>${r.points} pts</b></span></div>`).join('') || '<p class="muted">Other beneficiaries will appear here.</p>'}</div>`;
   },
 
-  review(rows, m) {
-    return `<h2>Attendance review</h2>${this.msg(m)}<div class="card"><div class="tablewrap"><table class="stack">
+  review(rows, m, excuses = []) {
+    const excHtml = `<div class="card"><h3>Excuse requests (${excuses.filter(e => e.status === 'pending').length} pending)</h3>
+      <p class="muted">Approving an excuse marks the day Excused and can grant <b>+1 make-up workday</b> so the beneficiary can still complete 20 paid days.</p>
+      <div class="tablewrap"><table class="stack">
+        <tr><th>Beneficiary</th><th>Date &amp; Category</th><th>Reason &amp; Proof</th><th>Status / Action</th></tr>
+        ${excuses.map(ex => `<tr>
+          <td data-label="Beneficiary"><b>${this.esc(ex.name)}</b></td>
+          <td data-label="Date &amp; Category">${this.esc(ex.date)}<br><span class="tag">${this.esc(ex.category)}</span></td>
+          <td data-label="Reason &amp; Proof">${this.esc(ex.reason)}${ex.photo ? `<br><a href="${ex.photo}" target="_blank" rel="noopener"><img src="${ex.photo}" alt="Excuse proof" width="70" style="margin-top:.35rem;border-radius:8px"></a>` : ''}</td>
+          <td data-label="Status">${ex.status === 'pending'
+            ? `<label class="mk-chk"><input type="checkbox" id="mk_${ex.id}" checked> Grant +1 make-up day</label>
+               <div class="row" style="margin-top:.35rem"><button class="btn" style="margin:0" data-act="reviewexcuse" data-id="${ex.id}" data-st="approved">Approve</button>
+               <button class="btn bad" style="margin:0" data-act="reviewexcuse" data-id="${ex.id}" data-st="rejected">Reject</button></div>`
+            : `<span class="tag ${ex.status === 'approved' ? 'exc' : 'bad'}">${ex.status === 'approved' ? (ex.makeupGranted ? 'Excused (+1 make-up)' : 'Excused') : 'Rejected'}</span>`}</td>
+        </tr>`).join('') || '<tr><td colspan="4" class="muted">No excuse requests yet.</td></tr>'}
+      </table></div></div>`;
+    return `<h2>Attendance review</h2>${this.msg(m)}${excHtml}<div class="card"><h3>Photo proof submissions</h3><div class="tablewrap"><table class="stack">
       <tr><th>Beneficiary</th><th>Slot</th><th>Submitted</th><th>Photo</th><th>Status</th></tr>
       ${rows.map(r => `<tr><td data-label="Beneficiary">${this.esc(r.name)}</td><td data-label="Slot">${r.label}</td><td data-label="Submitted">${this.when(r.submittedAt)}<br>
         <span class="tag ${r.onTime ? 'ok' : 'bad'}">${r.onTime ? 'On schedule' : 'Outside schedule'}</span></td>

@@ -50,6 +50,7 @@ SPES.API = {
     SPES.DB.set('users', d.users || []);
     SPES.DB.set('attendance', d.attendance || []);
     SPES.DB.set('attmanual', d.attmanual || []);
+    SPES.DB.set('excuses', d.excuses || []);
     SPES.DB.set('journals', d.journals || []);
     SPES.DB.set('events', d.events || []);
     SPES.DB.set('ann', d.announcements || []);

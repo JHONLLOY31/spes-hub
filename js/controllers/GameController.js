@@ -30,11 +30,31 @@ SPES.Games = {
     if (!p.replay) SPES.ActivityModel.log(u.id, `Completed room ${p.room + 1}: ${SPES.GameModel.TITLES[p.room]}`);
   },
 
+  launchRoom(room) {
+    if (this._launching) return 'skip';
+    this._launching = true;
+    const icon = (SPES.GameView.ICONS && SPES.GameView.ICONS[room]) || '🎮';
+    const title = SPES.GameModel.TITLES[room] || `Room ${room + 1}`;
+    const o = document.createElement('div');
+    o.className = 'glaunch';
+    o.setAttribute('aria-hidden', 'true');
+    o.innerHTML = `<div class="glaunch-in"><div class="glaunch-halo"><span class="glaunch-ring"></span><span class="glaunch-ic">${icon}</span></div><span class="glaunch-tag">Room ${room + 1}</span><b>${SPES.View.esc(title)}</b><i class="glaunch-bar"></i></div>`;
+    document.body.appendChild(o);
+    setTimeout(() => {
+      this.open(room);
+      SPES.App.anim = true;
+      SPES.App.render();
+      o.classList.add('out');
+      setTimeout(() => { o.remove(); this._launching = false; }, 280);
+    }, 620);
+    return 'skip';
+  },
+
   act(a, d) {
     const s = this.s(), p = s.play;
     if (!['flip', 'cell'].includes(a)) SPES.Sound.play('click');
     if (a === 'mute') SPES.Sound.on = !SPES.Sound.on;
-    else if (a === 'open') this.open(+d.room);
+    else if (a === 'open') return this.launchRoom(+d.room);
     else if (a === 'quit') s.play = null;
     else if (a === 'cert') s.cert = true;
     else if (a === 'retry') { if (!p.fb || p.fb.ok) return 'skip'; p.fb = null; }
