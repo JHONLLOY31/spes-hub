@@ -665,3 +665,17 @@ body,.card,.stat,.day,.cd,.back,.pills button,.seg,.seg button,.side nav button,
 @keyframes gLaunchOut{to{opacity:0;transform:scale(1.06);filter:blur(6px)}}
 @keyframes gRingSpin{to{transform:rotate(360deg)}}
 @keyframes gIconBurst{0%{opacity:0;transform:scale(.35) rotate(-24deg)}60%{opacity:1;transform:scale(1.16) rotate(8deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
+
+/* ===== Live Realtime Clock beside Theme Switch (User & Admin) ===== */
+.top-actions{flex-wrap:wrap}
+.live-clock{
+  display:inline-flex;align-items:center;gap:.5rem;height:46px;padding:0 14px;border-radius:999px;
+  background:var(--glass);-webkit-backdrop-filter:blur(16px) saturate(160%);backdrop-filter:blur(16px) saturate(160%);
+  border:1px solid var(--glass-line);box-shadow:0 4px 14px rgba(17,17,17,.08);
+  font-size:.86rem;font-variant-numeric:tabular-nums;white-space:nowrap
+}
+.clk-dot{width:8px;height:8px;border-radius:50%;background:#27c46b;box-shadow:0 0 0 3px rgba(39,196,107,.22);animation:ping 2s infinite;flex:none}
+.clk-time{font-weight:800;letter-spacing:.01em}
+.clk-date{color:var(--mute);font-size:.78rem;font-weight:600;padding-left:.45rem;border-left:1px solid var(--line)}
+[data-theme=dark] .clk-date{border-left-color:rgba(255,255,255,.16)}
+@media(max-width:520px){.live-clock{height:40px;padding:0 10px;font-size:.78rem}.clk-date{display:none}}

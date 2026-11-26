@@ -88,6 +88,7 @@ SPES.App = {
     });
     root.addEventListener('submit', e => { e.preventDefault(); this.submit(e.target.dataset.form, e.target, e.submitter && e.submitter.value, e.submitter); });
     root.addEventListener('reset', e => { const pv = e.target.querySelector('.pv'); if (pv) pv.innerHTML = ''; });
+    setInterval(() => this.tickClock(), 1000);
     setInterval(() => {
       if (!this.user() || this.s.tab !== 'attendance' || this.s.attConfirm || this.attSig === undefined) return;
       const sig = this.attSigNow();
@@ -214,6 +215,14 @@ SPES.App = {
     document.querySelectorAll('[data-pres-text]').forEach(el => { el.textContent = P.label(el.dataset.presText); });
   },
   attSigNow() { const A = SPES.AttendanceModel; return Object.keys(A.SLOTS).map(k => A.windowState(k).state).join(); },
+  tickClock() {
+    const tEl = document.querySelector('[data-clk-time]');
+    if (!tEl) return;
+    const now = new Date();
+    tEl.textContent = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }).format(now);
+    const dEl = document.querySelector('[data-clk-date]');
+    if (dEl) dEl.textContent = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', weekday: 'short', month: 'short', day: 'numeric' }).format(now);
+  },
   transition(title, sub, reveal) {
     const o = document.createElement('div');
     o.className = 'fx'; o.setAttribute('aria-hidden', 'true');
@@ -626,7 +635,7 @@ SPES.App = {
       if (existingMain && existingMain.dataset.uid === String(me.id)) {
         // Partial DOM update: keep the sidebar rock-solid (no flicker, no scroll jump)
         const dark = (me.settings || {}).theme === 'dark';
-        const topBtn = `<div class="top-actions"><button class="theme-toggle theme-switch ${dark ? 'is-dark' : 'is-light'}" data-act="theme" data-v="${dark ? 'light' : 'dark'}" title="Switch to ${dark ? 'light' : 'dark'} mode"><span class="theme-icon">${dark ? V.SUN : V.MOON}</span><span>${dark ? 'Light mode' : 'Dark mode'}</span><span class="theme-track"><i></i></span></button></div>`;
+        const topBtn = `<div class="top-actions">${V.liveClock()}<button class="theme-toggle theme-switch ${dark ? 'is-dark' : 'is-light'}" data-act="theme" data-v="${dark ? 'light' : 'dark'}" title="Switch to ${dark ? 'light' : 'dark'} mode"><span class="theme-icon">${dark ? V.SUN : V.MOON}</span><span>${dark ? 'Light mode' : 'Dark mode'}</span><span class="theme-track"><i></i></span></button></div>`;
         existingMain.innerHTML = `${topBtn}<div class="content-body${this.anim ? ' enter' : ''}">${body}</div>`;
 
         // Update sidebar active state, badges, and user chip in place

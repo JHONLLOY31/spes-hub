@@ -52,12 +52,19 @@ Object.assign(SPES.View, {
       <div class="row" style="justify-content:center"><button class="btn alt" data-act="canceldecline">Cancel</button><button class="btn bad" data-act="confirmdecline">Yes, decline</button></div></div></div>`;
   },
 
+  liveClock() {
+    const now = new Date();
+    const time = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }).format(now);
+    const date = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', weekday: 'short', month: 'short', day: 'numeric' }).format(now);
+    return `<div class="live-clock" title="Philippine Standard Time (Asia/Manila)"><span class="clk-dot" aria-hidden="true"></span><b class="clk-time" data-clk-time>${time}</b><span class="clk-date" data-clk-date>${date}</span></div>`;
+  },
+
   shell(user, tabs, tab, body, bd = {}) {
     const T = k => SPES.I18n.t(k), role = { beneficiary: 'SPES Beneficiary', head: 'Office Head', admin: 'Administrator' }[user.role];
     return `<div class="layout"><aside class="side"><div class="brand"><img src="img/logo.png" alt="SPES logo"><span>SPES<i>Hub</i></span><small>Learn · Earn · Grow</small></div>
       <nav>${tabs.map(k => `<button class="${k === tab ? 'on' : ''}" data-act="tab" data-t="${k}">${this.icon(k)}<span>${T(k)}</span>${bd[k] ? `<em class="nb">${bd[k]}</em>` : ''}</button>`).join('')}</nav>
       <div class="me"><div class="who">${this.av(user)}<div><b>${this.esc(user.name)}</b><small>${role}</small></div></div>
-      <button class="out" data-act="askout">${this.icon('logout')}${T('logout')}</button></div></aside><main class="content"><div class="top-actions"><button class="theme-toggle theme-switch ${(user.settings||{}).theme === 'dark' ? 'is-dark' : 'is-light'}" data-act="theme" data-v="${(user.settings||{}).theme === 'dark' ? 'light' : 'dark'}" title="Switch to ${(user.settings||{}).theme === 'dark' ? 'light' : 'dark'} mode"><span class="theme-icon">${(user.settings||{}).theme === 'dark' ? this.SUN : this.MOON}</span><span>${(user.settings||{}).theme === 'dark' ? 'Light mode' : 'Dark mode'}</span><span class="theme-track"><i></i></span></button></div>${body}</main></div>`;
+      <button class="out" data-act="askout">${this.icon('logout')}${T('logout')}</button></div></aside><main class="content"><div class="top-actions">${this.liveClock()}<button class="theme-toggle theme-switch ${(user.settings||{}).theme === 'dark' ? 'is-dark' : 'is-light'}" data-act="theme" data-v="${(user.settings||{}).theme === 'dark' ? 'light' : 'dark'}" title="Switch to ${(user.settings||{}).theme === 'dark' ? 'light' : 'dark'} mode"><span class="theme-icon">${(user.settings||{}).theme === 'dark' ? this.SUN : this.MOON}</span><span>${(user.settings||{}).theme === 'dark' ? 'Light mode' : 'Dark mode'}</span><span class="theme-track"><i></i></span></button></div>${body}</main></div>`;
   },
   logoutModal() {
     return `<div class="modal" role="dialog" aria-modal="true"><div class="mbox"><div class="mic">${this.icon('logout')}</div><h2>Leaving already?</h2>
