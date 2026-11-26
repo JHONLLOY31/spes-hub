@@ -19,10 +19,10 @@ const str = (v, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : 
 const fail = (status, msg) => { throw { status, msg }; };
 
 const SLOTS = {
-  AM_IN:  { label: 'Morning Time-In',   h: 8,  before: true,  open: 300,  close: 720  },
-  AM_OUT: { label: 'Morning Time-Out',  h: 12, before: false, open: 720,  close: 1440 },
-  PM_IN:  { label: 'Afternoon Time-In', h: 13, before: true,  open: 750,  close: 1020 },
-  PM_OUT: { label: 'Afternoon Time-Out',h: 17, before: false, open: 1020, close: 1440 }
+  AM_IN:  { label: 'Morning Time-In',    open: 420,  close: 720,  lateAfter: 480  }, // opens 7:00 AM; 8:01 AM+ late
+  AM_OUT: { label: 'Morning Time-Out',   open: 720,  close: 1440, lateAfter: 720  }, // opens 12:00 PM; 12:01 PM+ late
+  PM_IN:  { label: 'Afternoon Time-In',  open: 750,  close: 1020, lateAfter: 780  }, // opens 12:30 PM; 1:01 PM+ late
+  PM_OUT: { label: 'Afternoon Time-Out', open: 1020, close: 1440, lateAfter: null }  // opens 5:00 PM onwards
 };
 
 function clockLabel(mins) {
@@ -55,9 +55,10 @@ const mapBatch = b => ({ id: b.id, code: b.code, name: b.name, year: b.year, sta
 const mapAttendance = a => ({
   id: a.id, userId: a.user_id, slot: a.slot, date: a.date,
   photo: photoUrl(a.photo_path), submittedAt: a.submitted_at,
-  onTime: a.on_time, status: a.status, reviewedBy: a.reviewed_by, reviewedAt: a.reviewed_at
+  onTime: a.on_time, lateMinutes: a.late_minutes || 0, pointsDeducted: a.points_deducted || 0,
+  status: a.status, reviewedBy: a.reviewed_by, reviewedAt: a.reviewed_at
 });
-const mapManual = m => ({ userId: m.user_id, date: m.date, by: m.marked_by, at: m.marked_at });
+const mapManual = m => ({ userId: m.user_id, date: m.date, period: m.period || 'FULL', by: m.marked_by, at: m.marked_at });
 const mapExcuse = e => ({
   id: e.id, userId: e.user_id, date: e.date, category: e.category, reason: e.reason,
   photo: photoUrl(e.photo_path), status: e.status, makeupGranted: !!e.makeup_granted,
@@ -580,46 +581,64 @@ route('POST', '/api/attendance', ['beneficiary'], async ({ user, body }) => {
   const storagePath = `attendance/${user.id}/${date}_${slot}.jpg`;
   await uploadDataUrl(storagePath, body.photo);
 
-  const onTime = s.before ? now.mins < s.h * 60 : now.mins >= s.h * 60;
+  const lateMinutes = s.lateAfter !== null ? Math.max(0, now.mins - s.lateAfter) : 0;
+  const onTime = lateMinutes === 0;
   const { data, error } = await sb.from('attendance').insert({
     user_id: user.id, slot, date, photo_path: storagePath,
-    submitted_at: now.iso, on_time: onTime, status: 'pending'
+    submitted_at: now.iso, on_time: onTime, late_minutes: lateMinutes, points_deducted: 0, status: 'pending'
   }).select().single();
   if (error) fail(500, 'Could not save attendance: ' + error.message);
 
-  await pushNotif('staff', `${user.name} submitted ${s.label} proof (${date})`, 'attendance');
-  await logActivity(user.id, `Submitted ${s.label} proof`);
+  const lateNote = lateMinutes > 0 ? ` (Late ${lateMinutes} min)` : '';
+  await pushNotif('staff', `${user.name} submitted ${s.label} proof (${date})${lateNote}`, 'attendance');
+  await logActivity(user.id, `Submitted ${s.label} proof${lateNote}`);
   return [201, { record: mapAttendance(data) }];
 });
 
 route('PATCH', '/api/attendance/:id', ['admin'], async ({ user, params, body }) => {
   if (!['approved', 'rejected'].includes(body.status)) fail(400, 'Invalid status.');
+  const { data: cur } = await sb.from('attendance').select('*').eq('id', params.id).maybeSingle();
+  if (!cur) fail(404, 'Attendance record not found.');
+
+  let deducted = cur.points_deducted || 0;
+  if (body.status === 'approved' && (cur.late_minutes || 0) > 0 && deducted === 0) {
+    deducted = cur.late_minutes * 2;
+    await awardPoints(cur.user_id, -deducted);
+  }
+
   const { data, error } = await sb.from('attendance')
-    .update({ status: body.status, reviewed_by: user.name, reviewed_at: new Date().toISOString() })
+    .update({ status: body.status, points_deducted: deducted, reviewed_by: user.name, reviewed_at: new Date().toISOString() })
     .eq('id', params.id)
     .select()
     .maybeSingle();
   if (error || !data) fail(404, 'Attendance record not found.');
-  await pushNotif(data.user_id, `Your attendance was marked ${body.status}.`, 'attendance');
+
+  const slotLabel = (SLOTS[data.slot] && SLOTS[data.slot].label) || 'Attendance';
+  const msg = body.status === 'approved' && deducted > 0
+    ? `Your ${slotLabel} was approved (Late by ${data.late_minutes} min · −${deducted} pts deducted).`
+    : `Your ${slotLabel} was marked ${body.status}.`;
+  await pushNotif(data.user_id, msg, 'attendance');
   return [200, { record: mapAttendance(data) }];
 });
 
 route('POST', '/api/attendance/manual', ['admin'], async ({ user, body }) => {
   const userId = str(body.userId, 60);
   const date = str(body.date, 10);
+  const period = ['AM', 'PM', 'FULL'].includes(body.period) ? body.period : 'FULL';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) fail(400, 'Pick a valid date.');
   if (date > nowInTz().date) fail(400, 'You cannot mark a future day.');
   if (isRestDay(date)) fail(400, 'Saturday and Sunday are rest days.');
 
-  const { data: exists } = await sb.from('attendance_manual').select('user_id').eq('user_id', userId).eq('date', date).maybeSingle();
+  const { data: exists } = await sb.from('attendance_manual').select('user_id').eq('user_id', userId).eq('date', date).eq('period', period).maybeSingle();
   if (exists) {
-    await sb.from('attendance_manual').delete().eq('user_id', userId).eq('date', date);
-    return [200, { added: false }];
+    await sb.from('attendance_manual').delete().eq('user_id', userId).eq('date', date).eq('period', period);
+    return [200, { added: false, period }];
   }
-  const { error } = await sb.from('attendance_manual').insert({ user_id: userId, date, marked_by: user.id });
+  const { error } = await sb.from('attendance_manual').insert({ user_id: userId, date, period, marked_by: user.id });
   if (error) fail(500, error.message);
-  await pushNotif(userId, `The administrator marked you present for ${date}.`, 'attendance');
-  return [201, { added: true }];
+  const label = period === 'AM' ? 'Morning' : period === 'PM' ? 'Afternoon' : 'Full day';
+  await pushNotif(userId, `The administrator marked you present (${label}) for ${date}.`, 'attendance');
+  return [201, { added: true, period }];
 });
 
 // ---- Attendance Excuses + Automatic +1 Make-Up Day ----

@@ -383,12 +383,14 @@ SPES.App = {
       }
     }
     else if (a === 'markpresent' && u.role === 'admin') {
-      // Optimistic toggle
+      const period = d.period || 'FULL';
       const rows = SPES.AttendanceModel.manual();
-      const exists = rows.some(x => x.userId === d.id && x.date === d.date);
-      SPES.DB.set('attmanual', exists ? rows.filter(x => !(x.userId === d.id && x.date === d.date)) : [...rows, { userId: d.id, date: d.date, by: u.id, at: new Date().toISOString() }]);
+      const exists = rows.some(x => x.userId === d.id && x.date === d.date && (x.period || 'FULL') === period);
+      SPES.DB.set('attmanual', exists
+        ? rows.filter(x => !(x.userId === d.id && x.date === d.date && (x.period || 'FULL') === period))
+        : [...rows, { userId: d.id, date: d.date, period, by: u.id, at: new Date().toISOString() }]);
       this.render();
-      const r = await SPES.API.post('/api/attendance/manual', { userId: d.id, date: d.date });
+      const r = await SPES.API.post('/api/attendance/manual', { userId: d.id, date: d.date, period });
       if (!r.ok) { this.flash(r.error); await SPES.API.bootstrap(); this.render(); }
       return;
     }
@@ -496,10 +498,11 @@ SPES.App = {
     }
     else if (a === 'rmpic') { this.jpics.splice(+d.k, 1); document.getElementById('jpics').innerHTML = SPES.View.pics(this.jpics, false); return; }
     else if (a === 'review' && u.role === 'admin') {
-      SPES.DB.set('attendance', SPES.AttendanceModel.all().map(x => x.id === d.id ? { ...x, status: d.st, reviewedBy: u.name } : x));
+      SPES.DB.set('attendance', SPES.AttendanceModel.all().map(x => x.id === d.id ? { ...x, status: d.st, reviewedBy: u.name, pointsDeducted: d.st === 'approved' && x.lateMinutes ? x.lateMinutes * 2 : x.pointsDeducted } : x));
       this.render();
       const r = await SPES.API.patch(`/api/attendance/${d.id}`, { status: d.st });
       if (!r.ok) { this.flash(r.error); await SPES.API.bootstrap(); this.render(); }
+      else if (d.st === 'approved') this.syncBg(true);
       return;
     }
     else if (a === 'reviewexcuse' && u.role === 'admin') {

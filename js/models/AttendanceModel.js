@@ -1,10 +1,10 @@
 SPES.AttendanceModel = {
   // open/close are minutes after midnight. A slot is locked until it opens.
   SLOTS: {
-    AM_IN:  { label: 'Morning Time-In', rule: 'Opens 5:00 AM · on time before 8:00 AM', h: 8, before: true, open: 300, close: 720 },
-    AM_OUT: { label: 'Morning Time-Out', rule: 'Opens 12:00 PM', h: 12, before: false, open: 720, close: 1440 },
-    PM_IN:  { label: 'Afternoon Time-In', rule: 'Opens 12:30 PM · on time before 1:00 PM', h: 13, before: true, open: 750, close: 1020 },
-    PM_OUT: { label: 'Afternoon Time-Out', rule: 'Opens 5:00 PM', h: 17, before: false, open: 1020, close: 1440 }
+    AM_IN:  { label: 'Morning Time-In',    rule: 'Opens 7:00 AM · Late 8:01 AM+ (−2 pts/min)', open: 420,  close: 720,  lateAfter: 480  },
+    AM_OUT: { label: 'Morning Time-Out',   rule: 'Opens 12:00 PM · Late 12:01 PM+ (−2 pts/min)', open: 720,  close: 1440, lateAfter: 720  },
+    PM_IN:  { label: 'Afternoon Time-In',  rule: 'Opens 12:30 PM · Late 1:01 PM+ (−2 pts/min)', open: 750,  close: 1020, lateAfter: 780  },
+    PM_OUT: { label: 'Afternoon Time-Out', rule: 'Opens 5:00 PM onwards', open: 1020, close: 1440, lateAfter: null }
   },
   clock(mins) { const h = Math.floor(mins / 60); return `${h % 12 || 12}:${String(mins % 60).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; },
   windowState(slot, now = new Date()) { const s = this.SLOTS[slot], mins = now.getHours() * 60 + now.getMinutes(); return { open: mins >= s.open && mins < s.close, state: mins < s.open ? 'early' : mins >= s.close ? 'closed' : 'open', opensAt: this.clock(s.open) }; },
@@ -14,7 +14,11 @@ SPES.AttendanceModel = {
   today(id) { return this.forUser(id).filter(a => a.date === this.day()); },
   isWorkFromHome(date) { return new Date(date + 'T00:00:00').getDay() === 5; },
   manual() { return SPES.DB.get('attmanual', []); },
-  isManual(userId, date) { return this.manual().some(x => x.userId === userId && x.date === date); },
+  isManual(userId, date, period) {
+    const rows = this.manual().filter(x => x.userId === userId && x.date === date);
+    if (!period) return rows.length > 0;
+    return rows.some(x => (x.period || 'FULL') === period);
+  },
   excuses() { return SPES.DB.get('excuses', []); },
   excusesForUser(userId) { return this.excuses().filter(x => x.userId === userId); },
   excuseOn(userId, date) { return this.excuses().find(x => x.userId === userId && x.date === date) || null; },
@@ -43,22 +47,25 @@ SPES.AttendanceModel = {
   },
   dayStatus(userId, date, open) {
     if (this.isRestDay(date)) return ['Rest day', ''];
-    if (this.isManual(userId, date)) return ['Present', 'full'];
     if (this.isWorkFromHome(date)) return ['Work from home', ''];
     const ex = this.excuseOn(userId, date);
     if (ex && ex.status === 'approved') return ['Excused', 'exc'];
     if (ex && ex.status === 'pending') return ['Excuse pending', 'part'];
+    const manFull = this.isManual(userId, date, 'FULL');
+    const manAM = manFull || this.isManual(userId, date, 'AM');
+    const manPM = manFull || this.isManual(userId, date, 'PM');
+    if (manAM && manPM) return ['Present', 'full'];
     const r = this.forUser(userId).filter(a => a.date === date && this.SLOTS[a.slot]);
-    if (!r.length) return open ? ['Not submitted', ''] : ['Absent', 'abs'];
-    if (r.some(a => a.status === 'pending')) return ['Pending review', 'part'];
-    if (r.some(a => a.status === 'rejected')) return ['Needs correction', 'abs'];
     const approved = r.filter(a => a.status === 'approved').map(a => a.slot);
-    const am = approved.includes('AM_IN') && approved.includes('AM_OUT');
-    const pm = approved.includes('PM_IN') && approved.includes('PM_OUT');
+    const am = manAM || (approved.includes('AM_IN') && approved.includes('AM_OUT'));
+    const pm = manPM || (approved.includes('PM_IN') && approved.includes('PM_OUT'));
     if (am && pm) return ['Present', 'full'];
-    if (am || pm) return ['Half day', 'part'];
+    if (r.some(a => a.status === 'pending')) return ['Pending review', 'part'];
+    if (am) return ['Half day (AM)', 'part'];
+    if (pm) return ['Half day (PM)', 'part'];
+    if (r.some(a => a.status === 'rejected')) return ['Needs correction', 'abs'];
     if (approved.length) return ['Pending', 'part'];
-    return ['Absent', 'abs'];
+    return open ? ['Not submitted', ''] : ['Absent', 'abs'];
   },
   review(id, status, by) {
     if (!['approved', 'rejected'].includes(status)) return;
