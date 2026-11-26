@@ -5,8 +5,8 @@ SPES.App = {
   GAME_ACTS: ['open', 'quit', 'cert', 'answer', 'next', 'retry', 'flip', 'cell', 'mute'],
   TABS: {
     beneficiary: ['dashboard', 'attendance', 'journal', 'messages', 'calendar', 'games', 'board', 'badges', 'notifs', 'profile', 'settings'],
-    head: ['dashboard', 'journals', 'calendar', 'notifs', 'profile', 'settings'],
-    admin: ['dashboard', 'approvals', 'review', 'journals', 'personal', 'admin', 'announce', 'feedback', 'calendar', 'board', 'answers', 'notifs', 'profile', 'settings']
+    head: ['dashboard', 'personal', 'accounts', 'journals', 'board', 'answers', 'calendar', 'notifs', 'profile', 'settings'],
+    admin: ['dashboard', 'approvals', 'review', 'journals', 'messages', 'admin', 'announce', 'feedback', 'calendar', 'board', 'notifs', 'profile', 'settings']
   },
 
   async init() {
@@ -47,6 +47,20 @@ SPES.App = {
         this.s.pisQ = e.target.value;
         const q = e.target.value.trim().toLowerCase();
         document.querySelectorAll('[data-pis-search]').forEach(el => { el.hidden = !el.dataset.pisSearch.includes(q); });
+      }
+      if (e.target.id === 'acctSearch') {
+        this.s.acctQ = e.target.value;
+        const q = e.target.value.trim().toLowerCase();
+        document.querySelectorAll('[data-acct-search]').forEach(el => { el.hidden = !el.dataset.acctSearch.includes(q); });
+      }
+      if (e.target.id === 'chatInput' && this.s.chatPeer) {
+        const now = Date.now();
+        if (!this._lastTypePing || now - this._lastTypePing > 2200) {
+          this._lastTypePing = now;
+          SPES.API.post('/api/messages/typing', { to: this.s.chatPeer });
+        }
+        clearTimeout(this._typeOffTimer);
+        this._typeOffTimer = setTimeout(() => { SPES.API.post('/api/messages/typing', { to: null }); }, 4000);
       }
       if (e.target.id === 'noteModalInp') {
         const cnt = document.getElementById('noteCount');
@@ -114,28 +128,31 @@ SPES.App = {
     });
     root.addEventListener('submit', e => { e.preventDefault(); this.submit(e.target.dataset.form, e.target, e.submitter && e.submitter.value, e.submitter); });
     root.addEventListener('reset', e => { const pv = e.target.querySelector('.pv'); if (pv) pv.innerHTML = ''; });
-    // Live message polling every 4s while on the Message tab
+    // Fast 2.5s live Messenger polling (Beneficiary & Admin) for instant messages, typing, seen, reactions, edits & unsends
     setInterval(async () => {
       const u = this.user();
-      if (!u || u.role !== 'beneficiary' || this.s.tab !== 'messages' || this._chatPollBusy) return;
+      if (!u || (u.role !== 'beneficiary' && u.role !== 'admin') || this.s.tab !== 'messages' || this._chatPollBusy || this.s.chatEditId) return;
       this._chatPollBusy = true;
       try {
         const r = await SPES.API.get('/api/messages');
         if (r.ok && r.data) {
-          const prev = SPES.DB.get('messages', []);
+          const prevSig = JSON.stringify(SPES.DB.get('messages', []));
+          const prevTyping = this.s.chatPeer ? SPES.ChatView.isTypingToMe(this.s.chatPeer, u.id) : false;
           const next = r.data.messages || [];
           SPES.DB.set('presence', r.data.presence || SPES.DB.get('presence', {}));
           if (r.data.peers) {
             const me = this.user();
-            SPES.DB.set('users', [me, ...r.data.peers.filter(p => p.id !== me.id)]);
+            const existing = SPES.UserModel.all().filter(x => !r.data.peers.some(p => p.id === x.id) && x.id !== me.id);
+            SPES.DB.set('users', [me, ...r.data.peers, ...existing]);
           }
-          const changed = prev.length !== next.length || (next.length && prev.length && next[next.length - 1].id !== prev[prev.length - 1].id);
           SPES.DB.set('messages', next);
+          const nextTyping = this.s.chatPeer ? SPES.ChatView.isTypingToMe(this.s.chatPeer, u.id) : false;
+          const changed = prevSig !== JSON.stringify(next) || prevTyping !== nextTyping;
           if (changed) {
             const input = document.getElementById('chatInput');
             const draft = input ? input.value : '';
             const focused = input && document.activeElement === input;
-            if (this.s.chatPeer && next.some(m => m.from === this.s.chatPeer && m.to === u.id && !m.readAt)) {
+            if (this.s.chatPeer && next.some(m => m.from === this.s.chatPeer && m.to === u.id && !m.readAt && !m.unsent)) {
               SPES.API.post('/api/messages/read', { from: this.s.chatPeer });
             }
             this.anim = false;
@@ -148,7 +165,7 @@ SPES.App = {
           }
         }
       } finally { this._chatPollBusy = false; }
-    }, 4000);
+    }, 2500);
 
     setInterval(() => this.tickClock(), 1000);
     setInterval(() => {
@@ -364,7 +381,7 @@ SPES.App = {
 
   async act(a, d, btn) {
     const s = this.s, u = this.user();
-    this.anim = !['review', 'reviewexcuse', 'awardjournal', 'chatpeer', 'chatback', 'editnote', 'closenote', 'answer', 'attday', 'jday', 'flip', 'cell', 'rmpic', 'mute', 'sub', 'theme', 'lang', 'snd', 'markday', 'avborder', 'delnote', 'google', 'markpresent', 'deleteuser', 'canceldel', 'confirmdel', 'keylock', 'keymode', 'approve', 'decline', 'canceldecline', 'confirmdecline', 'reopen'].includes(a);
+    this.anim = !['review', 'reviewexcuse', 'awardjournal', 'delnotif', 'clearnotifs', 'chatpeer', 'chatback', 'chat_react', 'chat_edit', 'chat_edit_cancel', 'chat_unsend', 'editnote', 'closenote', 'answer', 'attday', 'jday', 'flip', 'cell', 'rmpic', 'mute', 'sub', 'theme', 'lang', 'snd', 'markday', 'avborder', 'delnote', 'google', 'markpresent', 'deleteuser', 'canceldel', 'confirmdel', 'keylock', 'keymode', 'approve', 'decline', 'canceldecline', 'confirmdecline', 'reopen'].includes(a);
 
     if (a === 'as') { s.as = d.v; s.m = null; }
     else if (a === 'deleteuser' && u.role === 'admin') { const t = SPES.UserModel.byId(d.id); if (t && t.role === 'beneficiary') s.delConfirm = t.id; }
@@ -541,8 +558,21 @@ SPES.App = {
       if (!r.ok) { this.flash(r.error); await SPES.API.bootstrap(); this.render(); }
       return;
     }
+    else if (a === 'delnotif' && (u.role === 'admin' || u.role === 'head')) {
+      SPES.DB.set('notifs', SPES.NotifModel.all().filter(n => n.id !== d.id));
+      this.render();
+      SPES.API.del(`/api/notifications/${d.id}`);
+      return;
+    }
+    else if (a === 'clearnotifs' && (u.role === 'admin' || u.role === 'head')) {
+      SPES.DB.set('notifs', []);
+      this.flash('All notifications cleared.', true);
+      this.render();
+      SPES.API.del('/api/notifications');
+      return;
+    }
     else if (a === 'chatpeer') {
-      s.chatPeer = d.id;
+      s.chatPeer = d.id; s.chatEditId = null;
       const now = new Date().toISOString();
       const hadUnread = SPES.ChatView.unreadFrom(u, d.id) > 0;
       if (hadUnread) {
@@ -554,7 +584,28 @@ SPES.App = {
       if (box) box.scrollTop = box.scrollHeight;
       return;
     }
-    else if (a === 'chatback') { s.chatPeer = null; }
+    else if (a === 'chatback') { s.chatPeer = null; s.chatEditId = null; }
+    else if (a === 'chat_edit') { s.chatEditId = d.mid; }
+    else if (a === 'chat_edit_cancel') { s.chatEditId = null; }
+    else if (a === 'chat_unsend') {
+      const mid = d.mid;
+      SPES.DB.set('messages', SPES.ChatView.all().map(m => m.id === mid ? { ...m, unsent: true, body: '', reactions: {} } : m));
+      this.render();
+      SPES.API.post(`/api/messages/${mid}/unsend`, {});
+      return;
+    }
+    else if (a === 'chat_react') {
+      const mid = d.mid, emoji = d.emoji;
+      SPES.DB.set('messages', SPES.ChatView.all().map(m => {
+        if (m.id !== mid) return m;
+        const rx = { ...(m.reactions || {}) };
+        if (rx[u.id] === emoji) delete rx[u.id]; else rx[u.id] = emoji;
+        return { ...m, reactions: rx };
+      }));
+      this.render();
+      SPES.API.post(`/api/messages/${mid}/react`, { emoji });
+      return;
+    }
     else if (a === 'dl_id' && SPES.IdCard) {
       this.setBusy(btn, true);
       await SPES.IdCard.download(u, d.side || 'both');
@@ -571,7 +622,7 @@ SPES.App = {
   async submit(form, el, mode, submitter) {
     const f = Object.fromEntries(new FormData(el).entries()), s = this.s, u = this.user(), M = SPES;
     const btn = submitter || el.querySelector('button[type=submit], button:not([type])');
-    const needsNet = !['attend', 'gtype', 'register', 'google_complete', 'chatmsg'].includes(form);
+    const needsNet = !['attend', 'gtype', 'register', 'google_complete', 'chatmsg', 'chatedit'].includes(form);
     if (needsNet) this.setBusy(btn, true);
 
     try {
@@ -670,6 +721,16 @@ SPES.App = {
           this.flash(r.error || 'Could not send message.');
           this.render();
         }
+        return;
+      } else if (form === 'chatedit') {
+        const mid = el.dataset.mid, body = (f.body || '').trim();
+        if (!mid || !body) return;
+        s.chatEditId = null;
+        SPES.DB.set('messages', SPES.ChatView.all().map(m => m.id === mid ? { ...m, body, editedAt: new Date().toISOString() } : m));
+        this.anim = false;
+        this.render();
+        const r = await M.API.patch(`/api/messages/${mid}`, { body });
+        if (!r.ok) { this.flash(r.error); await M.API.bootstrap(); this.render(); }
         return;
       } else if (form === 'gtype') { M.Games.type(f.val || '');
       } else if (form === 'name') {
@@ -908,12 +969,13 @@ SPES.App = {
       const en = this.draft ? { ...(saved || { status: 'draft' }), text: this.draft.text, event: this.draft.event } : saved; this.draft = null;
       return V.journal(days, n, en, SPES.EventModel.on(d.date), this.jpics, s.m);
     }
-    if (tab === 'messages' && SPES.ChatView) return SPES.ChatView.render(u, s.chatPeer, s.chatQ || '');
+    if (tab === 'messages' && SPES.ChatView) return SPES.ChatView.render(u, s.chatPeer, s.chatQ || '', s.chatEditId);
     if (tab === 'journals') return '<h2>Beneficiary journals</h2>' + V.entries(SPES.JournalModel.all().filter(j => j.status === 'submitted'), names, u.role === 'admin');
-    if (tab === 'personal' && SPES.PisView) return u.role === 'admin' ? SPES.PisView.adminIndex(SPES.BatchModel.all(), M.all(), s.pisBatch, s.pisUser, s.pisQ || '') : '<h1>Not authorized</h1>';
+    if (tab === 'personal' && SPES.PisView) return u.role === 'head' ? SPES.PisView.adminIndex(SPES.BatchModel.all(), M.all(), s.pisBatch, s.pisUser, s.pisQ || '') : '<h1>Not authorized</h1>';
+    if (tab === 'accounts') return u.role === 'head' ? V.accountsList(M.all(), s.acctQ || '') : '<h1>Not authorized</h1>';
     if (tab === 'review') return u.role === 'admin' ? V.review(A.all().slice().reverse().map(a => ({ ...a, name: names[a.userId] || 'Beneficiary', label: A.SLOTS[a.slot] ? A.SLOTS[a.slot].label : 'Attendance' })), s.m, A.excuses().map(ex => ({ ...ex, name: names[ex.userId] || 'Beneficiary' }))) : '<h1>Not authorized</h1>';
     if (tab === 'answers') {
-      if (u.role !== 'admin') return '<h1>Not authorized</h1>';
+      if (u.role !== 'head') return '<h1>Not authorized</h1>';
       const K = SPES.KeyModel;
       if (s.keyOpen && Date.now() - s.keyOpen < 600000) { s.keyOpen = Date.now(); return V.answers(SPES.GameModel, s.m, s.keyMode); }
       s.keyOpen = 0;
@@ -926,7 +988,7 @@ SPES.App = {
     }
     if (tab === 'announce') return V.announce(SPES.BatchModel.all(), SPES.DB.get('ann', []), s.m);
     if (tab === 'feedback') return V.feedbackList(SPES.FeedbackModel.all());
-    if (tab === 'notifs') { const html = V.notifs(N.for(u), u.seen); N.markSeen(u); return html; }
+    if (tab === 'notifs') { const html = V.notifs(N.for(u), u.seen, u.role === 'admin' || u.role === 'head'); N.markSeen(u); return html; }
     if (tab === 'badges') return `<h1>Badges & achievements</h1><div class="card">${V.badges(this.badgeList(u))}</div>`;
     if (tab === 'profile') {
       const st = u.role === 'beneficiary' ? [['Total points', G.total(u.id)], ['Rooms completed', G.completed(u.id) + ' / 20'], ['Batch', u.batch]] : [['Role', u.role === 'admin' ? 'Administrator' : 'Office Head'], ['Username', u.username]];
@@ -940,7 +1002,7 @@ SPES.App = {
     }
     if (tab === 'board') {
       const batches = SPES.BatchModel.all(), cur = u.role === 'beneficiary' ? u.batch : (s.board || (batches[0] || {}).code);
-      return V.leaderboard(G.leaderboard(cur), batches, cur, u.role !== 'beneficiary', u.name, u.role === 'admin');
+      return V.leaderboard(G.leaderboard(cur), batches, cur, u.role !== 'beneficiary', u.name, u.role === 'head');
     }
     if (tab === 'games') return SPES.Games.body(u);
   }

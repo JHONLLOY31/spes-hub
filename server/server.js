@@ -75,7 +75,12 @@ const mapAnn = a => ({ id: a.id, title: a.title, body: a.body, target: a.target,
 const mapNotif = n => ({ id: n.id, to: n.target, text: n.text, kind: n.kind, ts: n.created_at });
 const mapActivity = a => ({ uid: a.user_id, text: a.text, ts: a.created_at });
 const mapFeedback = f => ({ id: f.id, userId: f.user_id, name: f.name, text: f.text, rating: f.rating, ts: f.created_at });
-const mapMessage = m => ({ id: m.id, batch: m.batch_code, from: m.sender_id, to: m.receiver_id, body: m.body, readAt: m.read_at, ts: m.created_at });
+const mapMessage = m => ({
+  id: m.id, batch: m.batch_code, from: m.sender_id, to: m.receiver_id,
+  body: m.unsent ? '' : m.body, unsent: !!m.unsent,
+  editedAt: m.edited_at || null, reactions: m.reactions || {},
+  readAt: m.read_at, ts: m.created_at
+});
 
 async function pushNotif(target, text, kind = 'info') {
   await sb.from('notifications').insert({ target, text, kind });
@@ -366,7 +371,7 @@ route('GET', '/api/bootstrap', 'any', async ({ user }) => {
     staff
       ? sb.from('profiles').select('*').order('created_at', { ascending: false })
       : sb.from('profiles').select('id, spes_id, name, gender, username, role, batch_code, status, start_date, avatar_path, av_border, note, settings, seen, created_at')
-          .or(`id.eq.${user.id},and(role.eq.beneficiary,batch_code.eq.${user.batch_code},status.eq.approved)`),
+          .or(`id.eq.${user.id},role.eq.admin,and(role.eq.beneficiary,batch_code.eq.${user.batch_code},status.eq.approved)`),
     staff
       ? sb.from('attendance').select('*').order('submitted_at', { ascending: true })
       : sb.from('attendance').select('*').eq('user_id', user.id).order('submitted_at', { ascending: true }),
@@ -393,11 +398,11 @@ route('GET', '/api/bootstrap', 'any', async ({ user }) => {
       : sb.from('game_progress').select('*'),
     sb.from('points').select('*'),
     sb.from('presence').select('*'),
-    user.role === 'admin'
+    user.role === 'head'
       ? sb.from('app_settings').select('value').eq('key', 'answer_key').maybeSingle()
       : Promise.resolve({ data: null }),
-    user.role === 'beneficiary'
-      ? sb.from('messages').select('*').or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`).order('created_at', { ascending: true }).limit(400)
+    (user.role === 'beneficiary' || user.role === 'admin')
+      ? sb.from('messages').select('*').or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`).order('created_at', { ascending: true }).limit(500)
       : Promise.resolve({ data: [] })
   ]);
 
@@ -411,7 +416,10 @@ route('GET', '/api/bootstrap', 'any', async ({ user }) => {
 
   const presence = {};
   for (const r of (presRes.data || [])) {
-    presence[r.user_id] = { t: new Date(r.last_seen).getTime(), on: r.online };
+    presence[r.user_id] = {
+      t: new Date(r.last_seen).getTime(), on: r.online,
+      typingTo: r.typing_to || null, typingAt: r.typing_at ? new Date(r.typing_at).getTime() : 0
+    };
   }
 
   return [200, {
@@ -425,7 +433,7 @@ route('GET', '/api/bootstrap', 'any', async ({ user }) => {
     attendance: (attRes.data || []).map(mapAttendance),
     attmanual: (manRes.data || []).map(mapManual),
     excuses: (excRes.data || []).map(mapExcuse),
-    journals: (jrnRes.data || []).map(j => mapJournal(j, user.role === 'admin')),
+    journals: (jrnRes.data || []).map(j => mapJournal(j, staff)),
     events: (evRes.data || []).map(mapEvent),
     announcements: (annRes.data || []).map(mapAnn),
     notifs: (notifRes.data || []).map(mapNotif),
@@ -830,6 +838,16 @@ route('POST', '/api/notifs/seen', 'any', async ({ user }) => {
   return [200, { seen: now }];
 });
 
+route('DELETE', '/api/notifications/:id', ['admin', 'head'], async ({ params }) => {
+  await sb.from('notifications').delete().eq('id', params.id);
+  return [200, { ok: true }];
+});
+
+route('DELETE', '/api/notifications', ['admin', 'head'], async ({ user }) => {
+  await sb.from('notifications').delete().in('target', ['staff', user.id]);
+  return [200, { ok: true }];
+});
+
 route('POST', '/api/feedback', ['beneficiary'], async ({ user, body }) => {
   const text = str(body.text, 2000);
   const rating = Math.min(5, Math.max(1, Number(body.rating) || 5));
@@ -854,39 +872,53 @@ route('POST', '/api/presence', 'any', async ({ user, body }) => {
   return [200, { presence: map }];
 });
 
-// ---- Same-Batch Direct Messages (Beneficiary Messenger) ----
-route('GET', '/api/messages', ['beneficiary'], async ({ user }) => {
+// ---- Direct Messages (Beneficiary <-> Batchmates & Beneficiary <-> Admin) ----
+route('GET', '/api/messages', ['beneficiary', 'admin'], async ({ user }) => {
+  const peersQuery = user.role === 'admin'
+    ? sb.from('profiles').select('id, spes_id, name, role, batch_code, status, avatar_path, av_border, note').eq('role', 'beneficiary').eq('status', 'approved')
+    : sb.from('profiles').select('id, spes_id, name, role, batch_code, status, avatar_path, av_border, note').or(`role.eq.admin,and(role.eq.beneficiary,batch_code.eq.${user.batch_code},status.eq.approved)`);
   const [msgRes, presRes, peersRes] = await Promise.all([
-    sb.from('messages').select('*').or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`).order('created_at', { ascending: true }).limit(400),
+    sb.from('messages').select('*').or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`).order('created_at', { ascending: true }).limit(500),
     sb.from('presence').select('*'),
-    sb.from('profiles').select('id, name, role, batch_code, status, avatar_path, av_border, note').eq('role', 'beneficiary').eq('batch_code', user.batch_code).eq('status', 'approved')
+    peersQuery
   ]);
   const presence = {};
-  for (const r of (presRes.data || [])) presence[r.user_id] = { t: new Date(r.last_seen).getTime(), on: r.online };
+  for (const r of (presRes.data || [])) {
+    presence[r.user_id] = {
+      t: new Date(r.last_seen).getTime(), on: r.online,
+      typingTo: r.typing_to || null, typingAt: r.typing_at ? new Date(r.typing_at).getTime() : 0
+    };
+  }
   const peers = (peersRes.data || []).map(p => ({
-    id: p.id, name: p.name, role: p.role, batch: p.batch_code, status: p.status,
+    id: p.id, spesId: p.spes_id || null, name: p.name, role: p.role, batch: p.batch_code, status: p.status,
     avatar: photoUrl(p.avatar_path), avBorder: p.av_border || null, note: p.note || null
   }));
   return [200, { messages: (msgRes.data || []).map(mapMessage), presence, peers }];
 });
 
-route('POST', '/api/messages', ['beneficiary'], async ({ user, body }) => {
+route('POST', '/api/messages', ['beneficiary', 'admin'], async ({ user, body }) => {
   const to = str(body.to, 60);
   const text = str(body.body, 1000);
-  if (!to || to === user.id) fail(400, 'Choose a classmate from your batch to message.');
+  if (!to || to === user.id) fail(400, 'Choose someone to message.');
   if (!text) fail(400, 'Message cannot be empty.');
   const { data: peer } = await sb.from('profiles').select('id, role, status, batch_code').eq('id', to).maybeSingle();
-  if (!peer || peer.role !== 'beneficiary' || peer.status !== 'approved' || peer.batch_code !== user.batch_code) {
-    fail(403, 'You can only message approved beneficiaries in your own batch.');
+  if (!peer || peer.status !== 'approved') fail(404, 'Recipient not found.');
+  if (user.role === 'beneficiary') {
+    const allowed = peer.role === 'admin' || (peer.role === 'beneficiary' && peer.batch_code === user.batch_code);
+    if (!allowed) fail(403, 'You can only message classmates in your own batch or the Administrator.');
+  } else if (user.role === 'admin') {
+    if (peer.role !== 'beneficiary') fail(403, 'You can only message beneficiaries here.');
   }
+  const batchCode = user.role === 'beneficiary' ? user.batch_code : (peer.batch_code || null);
   const { data, error } = await sb.from('messages').insert({
-    batch_code: user.batch_code, sender_id: user.id, receiver_id: to, body: text
+    batch_code: batchCode, sender_id: user.id, receiver_id: to, body: text
   }).select().single();
   if (error) fail(500, 'Could not send message: ' + error.message);
+  await sb.from('presence').upsert({ user_id: user.id, last_seen: new Date().toISOString(), online: true, typing_to: null, typing_at: null }, { onConflict: 'user_id' });
   return [201, { message: mapMessage(data) }];
 });
 
-route('POST', '/api/messages/read', ['beneficiary'], async ({ user, body }) => {
+route('POST', '/api/messages/read', ['beneficiary', 'admin'], async ({ user, body }) => {
   const from = str(body.from, 60);
   if (!from) fail(400, 'Missing sender.');
   const now = new Date().toISOString();
@@ -894,9 +926,52 @@ route('POST', '/api/messages/read', ['beneficiary'], async ({ user, body }) => {
   return [200, { ok: true, readAt: now }];
 });
 
-// ---- Admin Answer Key Password ----
+route('POST', '/api/messages/typing', ['beneficiary', 'admin'], async ({ user, body }) => {
+  const to = body.to ? str(body.to, 60) : null;
+  await sb.from('presence').upsert({
+    user_id: user.id, last_seen: new Date().toISOString(), online: true,
+    typing_to: to, typing_at: to ? new Date().toISOString() : null
+  }, { onConflict: 'user_id' });
+  return [200, { ok: true }];
+});
+
+route('PATCH', '/api/messages/:id', ['beneficiary', 'admin'], async ({ user, params, body }) => {
+  const text = str(body.body, 1000);
+  if (!text) fail(400, 'Message cannot be empty.');
+  const { data: cur } = await sb.from('messages').select('*').eq('id', params.id).maybeSingle();
+  if (!cur || cur.sender_id !== user.id) fail(403, 'You can only edit your own messages.');
+  if (cur.unsent) fail(400, 'Cannot edit an unsent message.');
+  const { data, error } = await sb.from('messages').update({ body: text, edited_at: new Date().toISOString() }).eq('id', params.id).select().single();
+  if (error) fail(500, error.message);
+  return [200, { message: mapMessage(data) }];
+});
+
+route('POST', '/api/messages/:id/unsend', ['beneficiary', 'admin'], async ({ user, params }) => {
+  const { data: cur } = await sb.from('messages').select('*').eq('id', params.id).maybeSingle();
+  if (!cur || cur.sender_id !== user.id) fail(403, 'You can only unsend your own messages.');
+  const { data, error } = await sb.from('messages').update({ unsent: true, body: '', reactions: {} }).eq('id', params.id).select().single();
+  if (error) fail(500, error.message);
+  return [200, { message: mapMessage(data) }];
+});
+
+route('POST', '/api/messages/:id/react', ['beneficiary', 'admin'], async ({ user, params, body }) => {
+  const emoji = str(body.emoji, 10);
+  const ALLOWED = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+  if (!ALLOWED.includes(emoji)) fail(400, 'Invalid reaction.');
+  const { data: cur } = await sb.from('messages').select('*').eq('id', params.id).maybeSingle();
+  if (!cur || (cur.sender_id !== user.id && cur.receiver_id !== user.id)) fail(403, 'Not allowed.');
+  if (cur.unsent) fail(400, 'Cannot react to an unsent message.');
+  const reactions = { ...(cur.reactions || {}) };
+  if (reactions[user.id] === emoji) delete reactions[user.id];
+  else reactions[user.id] = emoji;
+  const { data, error } = await sb.from('messages').update({ reactions }).eq('id', params.id).select().single();
+  if (error) fail(500, error.message);
+  return [200, { message: mapMessage(data) }];
+});
+
+// ---- Office Head Answer Key Password ----
 const keyFails = new Map();
-route('POST', '/api/answerkey', ['admin'], async ({ user, body }) => {
+route('POST', '/api/answerkey', ['head'], async ({ user, body }) => {
   const kf = keyFails.get(user.id);
   if (kf && kf.until > Date.now()) {
     const mins = Math.ceil((kf.until - Date.now()) / 60000);

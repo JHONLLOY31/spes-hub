@@ -159,9 +159,22 @@ Object.assign(SPES.View, {
     return `<h1>Settings</h1><div class="pills">${tabs.map(([k, l]) => `<button class="${k === sub ? 'on' : ''}" data-act="sub" data-v="${k}">${l}</button>`).join('')}</div>${this.msg(m)}${b}`;
   },
 
-  notifs(list, seen) {
+  notifs(list, seen, canDelete = false) {
     const ic = { announce: 'announce', event: 'calendar', approval: 'approvals', feedback: 'feedback', attendance: 'attendance', journal: 'journal' };
-    return `<h1>Notifications</h1>${list.map(n => `<div class="card nrow ${n.ts > (seen || '') ? 'new' : ''}"><span class="ni">${this.icon(ic[n.kind] || 'notifs')}</span><div><b>${this.esc(n.text)}</b><div class="muted">${this.when(n.ts)}</div></div></div>`).join('') || '<p class="muted">You are all caught up.</p>'}`;
+    return `<div class="ch"><h1 style="margin:0">Notifications</h1>${canDelete && list.length ? '<button type="button" class="btn bad" style="margin:0;padding:.45rem .9rem;font-size:.85rem" data-act="clearnotifs">Clear all</button>' : ''}</div>
+      ${list.map(n => `<div class="card nrow ${n.ts > (seen || '') ? 'new' : ''}"><span class="ni">${this.icon(ic[n.kind] || 'notifs')}</span><div style="flex:1;min-width:0"><b>${this.esc(n.text)}</b><div class="muted">${this.when(n.ts)}</div></div>${canDelete ? `<button type="button" class="btn alt" style="margin:0;padding:.35rem .7rem;font-size:.8rem" data-act="delnotif" data-id="${n.id}">Delete</button>` : ''}</div>`).join('') || '<p class="muted">You are all caught up.</p>'}`;
+  },
+  accountsList(users, q = '') {
+    return `<h1>All Accounts</h1><p class="muted">Complete directory of all SPES Hub accounts across every batch.</p>
+      <label for="acctSearch">Search by name, SPES ID, username, role, or batch</label>
+      <input id="acctSearch" type="search" value="${this.esc(q)}" placeholder="Type a name, SPES ID, or batch..." autocomplete="off">
+      <div class="card" style="margin-top:.8rem"><div class="tablewrap"><table class="stack">
+        <tr><th>Name</th><th>SPES ID</th><th>Gender</th><th>Username</th><th>Role</th><th>Batch</th><th>Status</th></tr>
+        ${users.map(u => {
+          const hay = `${u.name} ${u.spesId || ''} ${u.username || ''} ${u.role || ''} ${u.batch || ''}`.toLowerCase();
+          return `<tr data-acct-search="${this.esc(hay)}"><td data-label="Name"><b>${this.esc(u.name)}</b></td><td data-label="SPES ID">${this.esc(u.spesId || '—')}</td><td data-label="Gender">${this.esc(u.gender || '—')}</td><td data-label="Username">@${this.esc(u.username)}</td><td data-label="Role"><span class="tag">${this.esc(u.role)}</span></td><td data-label="Batch">${this.esc(u.batch || '—')}</td><td data-label="Status"><span class="tag ${u.status === 'approved' ? 'ok' : u.status === 'rejected' ? 'bad' : 'gold'}">${this.esc(u.status || 'approved')}</span></td></tr>`;
+        }).join('') || '<tr><td colspan="7" class="muted">No accounts found.</td></tr>'}
+      </table></div></div>`;
   },
   approvals(list, declined, bname, m) {
     return `<h1>Approvals</h1><p class="muted">New beneficiaries must be approved before they can log in.</p>${this.msg(m)}
@@ -198,3 +211,4 @@ Object.assign(SPES.View.ICONS, {
 SPES.View.ICONS.answers = 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11';
 SPES.View.ICONS.messages = 'M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z';
 SPES.View.ICONS.personal = 'M4 5h16a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V7a2 2 0 012-2zM8 10a2 2 0 100 4 2 2 0 000-4zm5 1h5M13 14h4';
+SPES.View.ICONS.accounts = 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 7a4 4 0 100 8 4 4 0 000-8zm14 14v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75';
