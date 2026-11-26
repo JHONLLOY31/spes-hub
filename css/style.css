@@ -816,3 +816,41 @@ body,.card,.stat,.day,.cd,.back,.pills button,.seg,.seg button,.side nav button,
 .nbub-btn:active{transform:scale(.96)}
 .note-modal{max-width:400px}
 .note-meta{text-align:right;margin-top:.3rem}
+
+/* ===== 7-Section Personal Information Sheet (Onboarding & Admin Viewer) ===== */
+.pis-page{min-height:100vh;padding:1.5rem 1rem 3rem}
+.pis-shell{max-width:920px;margin:0 auto}
+.pis-banner{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;padding:1.1rem 1.3rem;border-radius:18px;background:#111;color:#fff;box-shadow:0 16px 36px rgba(17,17,17,.22)}
+.pis-banner img{width:64px;height:64px;object-fit:contain;flex:none}
+.pis-banner h1{margin:0;color:var(--y);font-size:1.5rem}
+.pis-banner .muted{color:#ccc;margin:.2rem 0 0;font-size:.9rem}
+.pis-sec h2{font-size:1.15rem;border-bottom:2px solid var(--y);padding-bottom:.35rem;margin-bottom:.75rem}
+.pis-sec h3{font-size:.98rem;margin:.8rem 0 .4rem}
+.pis-top-grid{display:grid;grid-template-columns:150px 1fr;gap:1.1rem;align-items:start}
+.pis-photo-up{display:flex;flex-direction:column;align-items:center}
+.pis-photo-pv{width:130px;height:130px;border-radius:14px;border:2px dashed var(--line);display:grid;place-items:center;text-align:center;font-size:.8rem;color:var(--mute);overflow:hidden;background:rgba(255,255,255,.5)}
+.pis-photo-pv img{width:100%;height:100%;object-fit:cover;margin:0;max-height:none;border-radius:0}
+.pis-grid{display:grid;grid-template-columns:1fr 1fr;gap:.55rem .9rem}
+.pis-grid3{grid-template-columns:repeat(3,1fr)}
+.pis-chks{display:flex;flex-wrap:wrap;gap:.45rem .85rem;margin:.25rem 0}
+.pis-chks.col{flex-direction:column;gap:.35rem}
+.pis-traits{display:grid;grid-template-columns:repeat(3,1fr);gap:.35rem .65rem;margin:.35rem 0}
+.pis-chk{display:inline-flex;align-items:center;gap:.45rem;margin:0;font-weight:500;font-size:.88rem;cursor:pointer}
+.pis-chk input{width:16px;height:16px;flex:none;accent-color:var(--y);cursor:pointer}
+.pis-consent{border:2px solid var(--y)}
+
+/* Admin & Profile PIS Read-Only Sheet */
+.pis-sheet h3{margin:1.2rem 0 .5rem;font-size:1rem;border-bottom:2px solid var(--y);padding-bottom:.25rem}
+.pis-sheet-head{display:flex;gap:1rem;align-items:center;flex-wrap:wrap;padding-bottom:.9rem;border-bottom:1px solid var(--line)}
+.pis-sheet-photo{width:96px;height:96px;border-radius:14px;object-fit:cover;border:3px solid var(--y);flex:none}
+.pis-kv-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.55rem .9rem}
+.pis-kv{padding:.45rem .65rem;border-radius:10px;background:rgba(17,17,17,.04)}
+[data-theme=dark] .pis-kv{background:rgba(255,255,255,.05)}
+.pis-kv span{display:block;font-size:.74rem;color:var(--mute);font-weight:600}
+.pis-kv b{display:block;font-size:.9rem;word-break:break-word}
+.pis-consent-badge{display:flex;flex-wrap:wrap;align-items:center;gap:.65rem;padding:.7rem .9rem;border-radius:12px;background:rgba(255,196,0,.14);border:1px solid rgba(255,196,0,.4)}
+.pis-user-card{margin:0}
+@media(max-width:720px){
+  .pis-top-grid,.pis-grid,.pis-grid3,.pis-kv-grid{grid-template-columns:1fr}
+  .pis-traits{grid-template-columns:1fr 1fr}
+}

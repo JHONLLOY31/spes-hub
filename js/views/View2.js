@@ -139,6 +139,7 @@ Object.assign(SPES.View, {
       <div class="abpick" role="group" aria-label="Photo frame">${[['none', 'None'], ['gold', 'Gold'], ['champion', 'Champion'], ['spark', 'Spark'], ['pulse', 'Pulse'], ['checker', 'Checker'], ['star', 'Star']].map(([k, l]) => `<button type="button" class="abp ${this.frameOf(u, 'xl') === k ? 'on' : ''}" data-act="avborder" data-v="${k}" aria-pressed="${this.frameOf(u, 'xl') === k}"><span class="frame fr-${k} sm"><span class="av plain"></span></span><span>${l}</span></button>`).join('')}</div></div>
       <div class="profile-meta"><b>SPES ID:</b> ${this.esc(u.spesId || 'Not assigned')} · <b>Gender:</b> ${this.esc(u.gender || 'Not specified')}</div><form data-form="name"><label>Full name</label><input name="name" value="${this.esc(u.name)}" required><label>Gender identity</label><select name="gender" required><option value="Male" ${u.gender === 'Male' ? 'selected' : ''}>Male</option><option value="Female" ${u.gender === 'Female' ? 'selected' : ''}>Female</option></select><button class="btn">Save profile</button></form></div>
       <div class="stats">${stats.map((s, i) => `<div class="stat ${i === 0 ? 'hl' : ''}"><span>${s[0]}</span><b>${s[1]}</b></div>`).join('')}</div>
+      ${u.role === 'beneficiary' && u.pis && SPES.PisView ? `<details class="card" style="margin-top:1rem"><summary style="cursor:pointer;font-weight:700">My Personal Information Sheet <span class="muted" style="font-weight:500">(click to expand)</span></summary><div style="margin-top:.8rem">${SPES.PisView.sheet(u, false)}</div></details>` : ''}
       ${u.role === 'beneficiary' && SPES.IdCard ? SPES.IdCard.section(u) : ''}`;
   },
 
@@ -196,3 +197,4 @@ Object.assign(SPES.View.ICONS, {
 
 SPES.View.ICONS.answers = 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11';
 SPES.View.ICONS.messages = 'M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z';
+SPES.View.ICONS.personal = 'M4 5h16a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V7a2 2 0 012-2zM8 10a2 2 0 100 4 2 2 0 000-4zm5 1h5M13 14h4';

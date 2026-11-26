@@ -47,6 +47,7 @@ const mapProfile = p => ({
   avBorder: p.av_border || null,
   note: p.note || null,
   settings: p.settings || {},
+  pis: p.pis || null,
   seen: p.seen || p.created_at
 });
 
@@ -62,10 +63,11 @@ const mapExcuse = e => ({
   photo: photoUrl(e.photo_path), status: e.status, makeupGranted: !!e.makeup_granted,
   reviewedBy: e.reviewed_by, reviewedAt: e.reviewed_at, createdAt: e.created_at
 });
-const mapJournal = j => ({
+const mapJournal = (j, isAdmin = false) => ({
   id: `${j.user_id}_${j.day}`, userId: j.user_id, day: j.day, date: j.date,
   text: j.text, event: j.event, photos: (j.photos || []).map(photoUrl),
-  status: j.status, updatedAt: j.updated_at
+  status: j.status, updatedAt: j.updated_at,
+  ...(isAdmin ? { pointsAwarded: j.points_awarded || 0, awardedBy: j.awarded_by || null, awardedAt: j.awarded_at || null } : {})
 });
 const mapEvent = e => ({ id: e.id, title: e.title, date: e.date, type: e.type });
 const mapAnn = a => ({ id: a.id, title: a.title, body: a.body, target: a.target, ts: a.created_at });
@@ -128,6 +130,32 @@ route('GET', '/api/health', undefined, () => [200, { ok: true, time: nowInTz() }
 // ---- Auth ----
 route('GET', '/api/me', undefined, ({ user }) => [200, { user: user ? mapProfile(user) : null }]);
 
+async function preparePis(uid, body) {
+  const nowIso = new Date().toISOString();
+  let avatarPath = null;
+  let pis = body.pis && typeof body.pis === 'object' ? { ...body.pis, submittedAt: nowIso, privacyConsent: true } : null;
+  if (typeof body.pisPhoto === 'string' && body.pisPhoto.startsWith('data:image/')) {
+    avatarPath = `avatars/${uid}_pis_${Date.now()}.jpg`;
+    await uploadDataUrl(avatarPath, body.pisPhoto);
+    if (pis) pis.photo = photoUrl(avatarPath);
+  }
+  const settings = { privacyAcceptedAt: nowIso };
+  if (pis) {
+    settings.idCard = {
+      fullName: str(pis.fullName || body.name, 100),
+      nickname: str(pis.nickname, 40),
+      address: str(pis.presentAddress || pis.permanentAddress, 200),
+      contact: str(pis.mobile, 40),
+      emgName: str(pis.emgName, 80),
+      emgRel: str(pis.emgRel, 40),
+      emgContact: str(pis.emgContact, 40),
+      effectivity: '',
+      ...(avatarPath ? { photo: photoUrl(avatarPath) } : {})
+    };
+  }
+  return { avatarPath, pis, settings };
+}
+
 route('POST', '/api/register', undefined, async ({ body }) => {
   const name = str(body.name, 80);
   const username = str(body.username, 30);
@@ -157,11 +185,14 @@ route('POST', '/api/register', undefined, async ({ body }) => {
   if (created.error) fail(409, created.error.message || 'Could not create account.');
 
   const uid = created.data.user.id;
+  const { avatarPath, pis, settings } = await preparePis(uid, body);
   const { error: profErr } = await sb.from('profiles').insert({
     id: uid, username, spes_id: spesId, name, gender,
     role: 'beneficiary', batch_code: batch.code, status: 'pending',
     start_date: nowInTz().date,
-    settings: body.privacyAccepted ? { privacyAcceptedAt: new Date().toISOString() } : {}
+    avatar_path: avatarPath,
+    pis,
+    settings
   });
   if (profErr) {
     await sb.auth.admin.deleteUser(uid);
@@ -309,11 +340,14 @@ route('POST', '/api/auth/google/complete', undefined, async ({ body }) => {
   const prefix = ((batch.name || '').match(/B[12]/i) || [batch.code.startsWith('B2-') ? 'B2' : 'B1'])[0].toUpperCase();
   const spesId = `${prefix}-${batch.year}-${String(maxSeq + 1).padStart(4, '0')}`;
 
+  const { avatarPath, pis, settings } = await preparePis(gUser.id, body);
   const { error: profErr } = await sb.from('profiles').insert({
     id: gUser.id, username, spes_id: spesId, name, gender,
     role: 'beneficiary', batch_code: batch.code, status: 'pending',
     start_date: nowInTz().date,
-    settings: body.privacyAccepted ? { privacyAcceptedAt: new Date().toISOString() } : {}
+    avatar_path: avatarPath,
+    pis,
+    settings
   });
   if (profErr) fail(500, 'Could not save profile: ' + profErr.message);
 
@@ -390,7 +424,7 @@ route('GET', '/api/bootstrap', 'any', async ({ user }) => {
     attendance: (attRes.data || []).map(mapAttendance),
     attmanual: (manRes.data || []).map(mapManual),
     excuses: (excRes.data || []).map(mapExcuse),
-    journals: (jrnRes.data || []).map(mapJournal),
+    journals: (jrnRes.data || []).map(j => mapJournal(j, user.role === 'admin')),
     events: (evRes.data || []).map(mapEvent),
     announcements: (annRes.data || []).map(mapAnn),
     notifs: (notifRes.data || []).map(mapNotif),
@@ -687,6 +721,22 @@ route('PATCH', '/api/journals/:day/status', ['beneficiary'], async ({ user, para
     .eq('user_id', user.id).eq('day', day).select().maybeSingle();
   if (error || !data) fail(404, 'Journal not found.');
   return [200, { journal: mapJournal(data) }];
+});
+
+// Admin-only: award or undo +100 journal points for a nice journal (hidden from beneficiaries)
+route('POST', '/api/journals/:userId/:day/award', ['admin'], async ({ user, params, body }) => {
+  const day = Number(params.day);
+  const uid = str(params.userId, 60);
+  const { data: cur } = await sb.from('journals').select('*').eq('user_id', uid).eq('day', day).maybeSingle();
+  if (!cur) fail(404, 'Journal entry not found.');
+  const nextPts = body.points !== undefined ? (Number(body.points) > 0 ? 100 : 0) : (cur.points_awarded >= 100 ? 0 : 100);
+  const { data, error } = await sb.from('journals').update({
+    points_awarded: nextPts,
+    awarded_by: nextPts > 0 ? user.name : null,
+    awarded_at: nextPts > 0 ? new Date().toISOString() : null
+  }).eq('user_id', uid).eq('day', day).select().single();
+  if (error) fail(500, 'Could not update journal points: ' + error.message);
+  return [200, { journal: mapJournal(data, true) }];
 });
 
 // ---- Games (server-scored) ----

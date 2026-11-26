@@ -60,7 +60,12 @@ SPES.GameModel = {
   hasCertificate(id) { return this.completed(id) === this.TITLES.length; },
   leaderboard(batch) {
     return SPES.UserModel.all().filter(u => u.role === 'beneficiary' && u.batch === batch && u.status !== 'pending')
-      .map(u => ({ name: u.name, points: this.total(u.id), rooms: this.completed(u.id) })).sort((a, b) => b.points - a.points);
+      .map(u => ({
+        name: u.name,
+        points: this.total(u.id),
+        journalPoints: SPES.JournalModel && SPES.JournalModel.pointsForUser ? SPES.JournalModel.pointsForUser(u.id) : 0,
+        rooms: this.completed(u.id)
+      })).sort((a, b) => b.points - a.points);
   }
 };
 

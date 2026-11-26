@@ -176,11 +176,20 @@ SPES.View = {
           : '<button class="btn alt" name="do" value="draft">Save draft</button><button class="btn" name="do" value="submitted">Submit</button>'}</div>
       </form>`;
   },
-  entries(list, names) {
+  entries(list, names, isAdmin = false) {
     if (!list.length) return '<p class="muted">No submitted journals yet.</p>';
-    return list.map(j => `<div class="card"><strong>Day ${j.day} · ${j.date}</strong> ${names ? '· ' + this.esc(names[j.userId] || '') : ''} ${j.event ? `<span class="tag gold">${this.esc(j.event)}</span>` : ''}
-      <p>${this.esc(j.text).replace(/\n/g, '<br>')}</p>
-      <div class="grid">${j.photos.map(p => `<img class="thumb" src="${p}" alt="Journal photo">`).join('')}</div></div>`).join('');
+    return list.map(j => {
+      const pts = Number(j.pointsAwarded) || 0;
+      const awardBar = isAdmin
+        ? `<div class="row" style="margin-top:.75rem;justify-content:space-between;border-top:1px solid var(--line);padding-top:.6rem">
+            <span class="tag ${pts >= 100 ? 'ok' : ''}">${pts >= 100 ? '★ +100 Journal Points Awarded (Admin only)' : 'No journal points yet'}</span>
+            <button type="button" class="btn ${pts >= 100 ? 'alt' : ''}" style="margin:0" data-act="awardjournal" data-uid="${j.userId}" data-day="${j.day}">${pts >= 100 ? 'Remove +100 pts' : '★ Award +100 pts (Nice Journal)'}</button>
+          </div>`
+        : '';
+      return `<div class="card"><strong>Day ${j.day} · ${j.date}</strong> ${names ? '· ' + this.esc(names[j.userId] || '') : ''} ${j.event ? `<span class="tag gold">${this.esc(j.event)}</span>` : ''}
+        <p>${this.esc(j.text).replace(/\n/g, '<br>')}</p>
+        <div class="grid">${j.photos.map(p => `<img class="thumb" src="${p}" alt="Journal photo">`).join('')}</div>${awardBar}</div>`;
+    }).join('');
   },
 
   calendar(y, mo, events, marks, admin, m) {
@@ -235,12 +244,16 @@ SPES.View = {
       <p class="noprint"><button class="btn" onclick="window.print()">Print</button> <button class="btn alt" data-act="tab" data-t="games">Back</button></p>`;
   },
 
-  leaderboard(rows, batches, current, canPick, me) {
-    const top = [rows[1], rows[0], rows[2]], cls = ['p2', 'p1', 'p3'], medal = ['🥈', '🥇', '🥉'], rank = [2, 1, 3];
+  leaderboard(rows, batches, current, canPick, me, isAdmin = false) {
+    const scoreOf = r => isAdmin ? (r.points + (r.journalPoints || 0)) : r.points;
+    const sorted = rows.slice().sort((a, b) => scoreOf(b) - scoreOf(a));
+    const top = [sorted[1], sorted[0], sorted[2]], cls = ['p2', 'p1', 'p3'], medal = ['🥈', '🥇', '🥉'], rank = [2, 1, 3];
     return `<h1>Leaderboard</h1>
       ${canPick ? `<label>Batch</label><select data-act="board">${batches.map(b => `<option value="${b.code}" ${b.code === current ? 'selected' : ''}>${this.esc(b.name)} (${b.code})</option>`).join('')}</select>` : `<p class="muted">Batch ${current}</p>`}
-      <div class="podium">${top.map((r, i) => r ? `<div class="pod ${cls[i]}"><span class="md">${medal[i]}</span><b>${this.esc(r.name)}</b><small>${r.points} pts</small><div class="blk">${rank[i]}</div></div>` : '<div class="pod"></div>').join('')}</div>
-      <div class="card">${rows.slice(3).map((r, i) => `<div class="act ${r.name === me ? 'me2' : ''}"><span>${i + 4}. ${this.esc(r.name)}</span><span>${r.rooms}/20 rooms · <b>${r.points} pts</b></span></div>`).join('') || '<p class="muted">Other beneficiaries will appear here.</p>'}</div>`;
+      ${isAdmin ? '<p class="muted">Admin view: shows <b>Game Points</b> and <b>Journal Points</b> separately (beneficiaries only see Game Points).</p>' : ''}
+      <div class="podium">${top.map((r, i) => r ? `<div class="pod ${cls[i]}"><span class="md">${medal[i]}</span><b>${this.esc(r.name)}</b><small>${scoreOf(r)} pts${isAdmin ? ` (${r.points}G + ${r.journalPoints || 0}J)` : ''}</small><div class="blk">${rank[i]}</div></div>` : '<div class="pod"></div>').join('')}</div>
+      ${isAdmin ? `<div class="card"><div class="tablewrap"><table class="stack"><tr><th>Rank</th><th>Beneficiary</th><th>Rooms</th><th>Game Points</th><th>Journal Points (Admin)</th><th>Combined Total</th></tr>${sorted.map((r, i) => `<tr><td data-label="Rank">#${i + 1}</td><td data-label="Beneficiary"><b>${this.esc(r.name)}</b></td><td data-label="Rooms">${r.rooms}/20</td><td data-label="Game Points">${r.points} pts</td><td data-label="Journal Points"><span class="tag ${(r.journalPoints || 0) > 0 ? 'gold' : ''}">${r.journalPoints || 0} pts</span></td><td data-label="Combined Total"><b>${scoreOf(r)} pts</b></td></tr>`).join('') || '<tr><td colspan="6" class="muted">No beneficiaries yet.</td></tr>'}</table></div></div>`
+      : `<div class="card">${sorted.slice(3).map((r, i) => `<div class="act ${r.name === me ? 'me2' : ''}"><span>${i + 4}. ${this.esc(r.name)}</span><span>${r.rooms}/20 rooms · <b>${r.points} pts</b></span></div>`).join('') || '<p class="muted">Other beneficiaries will appear here.</p>'}</div>`}`;
   },
 
   review(rows, m, excuses = []) {
@@ -269,7 +282,7 @@ SPES.View = {
           : `<span class="tag ${r.status === 'approved' ? 'ok' : 'bad'}">${r.status}</span>`}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No submissions yet.</td></tr>'}</table></div></div>`;
   },
 
-  adminMember(u) { const A = SPES.AttendanceModel, G = SPES.GameModel, J = SPES.JournalModel; const at = A.forUser(u.id), approved = at.filter(x => x.status === 'approved').length, pending = at.filter(x => x.status === 'pending').length, journals = J.forUser(u.id).filter(x => x.status === 'submitted').length, pts = G.total(u.id); return `<article class="card classroom-user" data-search="${this.esc((u.name+' '+(u.spesId||'')).toLowerCase())}"><div class="ch"><div class="mwho"><span class="avw">${this.av(u)}<i class="dot" data-presence="${u.id}"></i></span><div><b>${this.esc(u.name)}</b><div class="muted">${this.esc(u.spesId || 'SPES ID pending')} · ${this.esc(u.gender || 'Not specified')}</div><small class="muted">Day 1: ${SPES.UserModel.startDate(u)}</small><br><small class="muted" data-pres-text="${u.id}"></small>${this.noteLive(u) ? `<div class="mnote">${this.esc(this.noteLive(u).text)}</div>` : ''}</div></div><span class="tag">${u.status}</span></div><div class="stats compact"><div class="stat"><span>Approved slots</span><b>${approved}</b></div><div class="stat"><span>Pending review</span><b>${pending}</b></div><div class="stat"><span>Journals</span><b>${journals}</b></div><div class="stat"><span>Game points</span><b>${pts}</b></div></div><details class="record-details"><summary>View attendance, journal entries and scores</summary><h4>Attendance submissions</h4>${at.length ? at.map(a => `<div class="act"><span>${A.SLOTS[a.slot]?.label || 'Attendance'} · ${a.date}</span><span class="tag ${a.status === 'approved' ? 'ok' : a.status === 'rejected' ? 'bad' : 'gold'}">${a.status}</span>${a.photo ? `<a href="${a.photo}" target="_blank" rel="noopener">View photo</a>` : ''}</div>`).join('') : '<p class="muted">No attendance records yet.</p>'}<h4>Daily journals</h4>${J.forUser(u.id).map(j => `<div class="act"><span>Day ${j.day} · ${j.date}<small>${this.esc(j.text)}</small></span><span class="tag">${j.status}</span></div>${j.photos.map(photo => `<a href="${photo}" target="_blank" rel="noopener"><img class="thumb" src="${photo}" alt="Journal proof"></a>`).join('')}`).join('') || '<p class="muted">No journal entries yet.</p>'}<p><b>Total game points: ${pts}</b> · ${G.completed(u.id)} / 20 rooms completed</p></details><div class="row"><button class="btn alt" data-act="tab" data-t="review">Review photos</button><button class="btn bad" data-act="deleteuser" data-id="${u.id}">Delete account</button></div></article>`; },
+  adminMember(u) { const A = SPES.AttendanceModel, G = SPES.GameModel, J = SPES.JournalModel; const at = A.forUser(u.id), approved = at.filter(x => x.status === 'approved').length, pending = at.filter(x => x.status === 'pending').length, journals = J.forUser(u.id).filter(x => x.status === 'submitted').length, pts = G.total(u.id), jpts = J.pointsForUser(u.id); return `<article class="card classroom-user" data-search="${this.esc((u.name+' '+(u.spesId||'')).toLowerCase())}"><div class="ch"><div class="mwho"><span class="avw">${this.av(u)}<i class="dot" data-presence="${u.id}"></i></span><div><b>${this.esc(u.name)}</b><div class="muted">${this.esc(u.spesId || 'SPES ID pending')} · ${this.esc(u.gender || 'Not specified')}</div><small class="muted">Day 1: ${SPES.UserModel.startDate(u)}</small><br><small class="muted" data-pres-text="${u.id}"></small>${this.noteLive(u) ? `<div class="mnote">${this.esc(this.noteLive(u).text)}</div>` : ''}</div></div><span class="tag">${u.status}</span></div><div class="stats compact"><div class="stat"><span>Approved slots</span><b>${approved}</b></div><div class="stat"><span>Journals</span><b>${journals}</b></div><div class="stat"><span>Game points</span><b>${pts}</b></div><div class="stat hl"><span>Journal pts (Admin)</span><b>${jpts}</b></div></div><details class="record-details"><summary>View attendance, journal entries and scores</summary><h4>Attendance submissions</h4>${at.length ? at.map(a => `<div class="act"><span>${A.SLOTS[a.slot]?.label || 'Attendance'} · ${a.date}</span><span class="tag ${a.status === 'approved' ? 'ok' : a.status === 'rejected' ? 'bad' : 'gold'}">${a.status}</span>${a.photo ? `<a href="${a.photo}" target="_blank" rel="noopener">View photo</a>` : ''}</div>`).join('') : '<p class="muted">No attendance records yet.</p>'}<h4>Daily journals</h4>${J.forUser(u.id).map(j => `<div class="act"><span>Day ${j.day} · ${j.date}<small>${this.esc(j.text)}</small></span><span class="tag">${j.status}${j.pointsAwarded ? ' · +' + j.pointsAwarded + ' pts' : ''}</span></div>${j.photos.map(photo => `<a href="${photo}" target="_blank" rel="noopener"><img class="thumb" src="${photo}" alt="Journal proof"></a>`).join('')}`).join('') || '<p class="muted">No journal entries yet.</p>'}<p><b>Game points: ${pts}</b> · <b>Journal points: ${jpts}</b> · <b>Combined: ${pts + jpts} pts</b> · ${G.completed(u.id)} / 20 rooms</p></details><div class="row"><button class="btn alt" data-act="tab" data-t="review">Review photos</button><button class="btn bad" data-act="deleteuser" data-id="${u.id}">Delete account</button></div></article>`; },
   // Admin: one "room" per batch. The list shows the rooms; opening one shows its beneficiaries with a name / SPES ID search.
   onlineInner(members) {
     const on = members.filter(u => SPES.PresenceModel.online(u.id));

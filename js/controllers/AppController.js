@@ -6,7 +6,7 @@ SPES.App = {
   TABS: {
     beneficiary: ['dashboard', 'attendance', 'journal', 'messages', 'calendar', 'games', 'board', 'badges', 'notifs', 'profile', 'settings'],
     head: ['dashboard', 'journals', 'calendar', 'notifs', 'profile', 'settings'],
-    admin: ['dashboard', 'approvals', 'review', 'journals', 'admin', 'announce', 'feedback', 'calendar', 'board', 'answers', 'notifs', 'profile', 'settings']
+    admin: ['dashboard', 'approvals', 'review', 'journals', 'personal', 'admin', 'announce', 'feedback', 'calendar', 'board', 'answers', 'notifs', 'profile', 'settings']
   },
 
   async init() {
@@ -42,6 +42,11 @@ SPES.App = {
         this.s.chatQ = e.target.value;
         const q = e.target.value.trim().toLowerCase();
         document.querySelectorAll('[data-chat-search]').forEach(el => { el.hidden = !el.dataset.chatSearch.includes(q); });
+      }
+      if (e.target.id === 'pisSearch') {
+        this.s.pisQ = e.target.value;
+        const q = e.target.value.trim().toLowerCase();
+        document.querySelectorAll('[data-pis-search]').forEach(el => { el.hidden = !el.dataset.pisSearch.includes(q); });
       }
       if (e.target.id === 'noteModalInp') {
         const cnt = document.getElementById('noteCount');
@@ -294,7 +299,7 @@ SPES.App = {
   },
   go(tab) {
     this.anim = true;
-    Object.assign(this.s, { tab, m: null, play: null, cert: false, room: null, keyOpen: 0, keyMode: '' });
+    Object.assign(this.s, { tab, m: null, play: null, cert: false, room: null, pisBatch: null, pisUser: null, pisQ: '', keyOpen: 0, keyMode: '' });
     this.render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     this.syncBg();
@@ -359,7 +364,7 @@ SPES.App = {
 
   async act(a, d, btn) {
     const s = this.s, u = this.user();
-    this.anim = !['review', 'reviewexcuse', 'chatpeer', 'chatback', 'editnote', 'closenote', 'answer', 'attday', 'jday', 'flip', 'cell', 'rmpic', 'mute', 'sub', 'theme', 'lang', 'snd', 'markday', 'avborder', 'delnote', 'google', 'markpresent', 'deleteuser', 'canceldel', 'confirmdel', 'keylock', 'keymode', 'approve', 'decline', 'canceldecline', 'confirmdecline', 'reopen'].includes(a);
+    this.anim = !['review', 'reviewexcuse', 'awardjournal', 'chatpeer', 'chatback', 'editnote', 'closenote', 'answer', 'attday', 'jday', 'flip', 'cell', 'rmpic', 'mute', 'sub', 'theme', 'lang', 'snd', 'markday', 'avborder', 'delnote', 'google', 'markpresent', 'deleteuser', 'canceldel', 'confirmdel', 'keylock', 'keymode', 'approve', 'decline', 'canceldecline', 'confirmdecline', 'reopen'].includes(a);
 
     if (a === 'as') { s.as = d.v; s.m = null; }
     else if (a === 'deleteuser' && u.role === 'admin') { const t = SPES.UserModel.byId(d.id); if (t && t.role === 'beneficiary') s.delConfirm = t.id; }
@@ -407,6 +412,23 @@ SPES.App = {
     else if (a === 'google_reset_start') {
       if (btn) { btn.disabled = true; btn.classList.add('is-busy'); btn.textContent = 'Connecting to Google...'; }
       location.href = '/api/auth/google?flow=reset';
+      return;
+    }
+    else if (a === 'pis_cancel') {
+      s.mode = this.pendingReg && this.pendingReg.kind === 'google_complete' ? 'google_setup' : 'register';
+      this.pendingReg = null;
+    }
+    else if (a === 'pis_batch') { s.pisBatch = d.code || null; s.pisUser = null; s.pisQ = ''; }
+    else if (a === 'pis_user') { s.pisUser = d.id || null; }
+    else if (a === 'awardjournal' && u.role === 'admin') {
+      const uid = d.uid, day = +d.day;
+      const cur = SPES.JournalModel.get(uid, day);
+      const nextPts = cur && (Number(cur.pointsAwarded) || 0) >= 100 ? 0 : 100;
+      SPES.DB.set('journals', SPES.JournalModel.all().map(j => j.userId === uid && j.day === day ? { ...j, pointsAwarded: nextPts } : j));
+      this.flash(nextPts ? 'Awarded +100 journal points (Admin only).' : 'Removed +100 journal points.', true);
+      this.render();
+      const r = await SPES.API.post(`/api/journals/${uid}/${day}/award`, { points: nextPts });
+      if (!r.ok) { this.flash(r.error); await SPES.API.bootstrap(); this.render(); }
       return;
     }
     else if (a === 'privacy_cancel') {
@@ -548,7 +570,23 @@ SPES.App = {
       } else if (form === 'register') {
         if (!f.gender) { this.flash('Please select your gender.'); this.render(); return; }
         this.pendingReg = { kind: 'register', payload: { ...f, username: f.username.trim(), name: f.name.trim(), privacyAccepted: true } };
-        s.privacyModal = true; this.anim = false; this.render(); return;
+        s.mode = 'pis_form'; this.render(); window.scrollTo({ top: 0, behavior: 'smooth' }); return;
+      } else if (form === 'pis_submit') {
+        if (!this.pendingReg) { s.mode = 'register'; this.render(); return; }
+        const pis = SPES.PisView.collect(el);
+        if (!pis.privacyConsent) { this.flash('You must agree to the Data Privacy Consent before submitting.'); this.render(); return; }
+        const photoFile = el.pisPhoto && el.pisPhoto.files && el.pisPhoto.files[0];
+        const pisPhoto = photoFile ? await this.readImage(photoFile, 480) : null;
+        const endpoint = this.pendingReg.kind === 'google_complete' ? '/api/auth/google/complete' : '/api/register';
+        const r = await M.API.post(endpoint, { ...this.pendingReg.payload, pis, pisPhoto, privacyAccepted: true });
+        if (!r.ok) { this.flash(r.error); this.render(); return; }
+        const wasGoogle = this.pendingReg.kind === 'google_complete';
+        this.pendingReg = null;
+        if (wasGoogle) { s.googleToken = null; s.googleData = null; }
+        this.flash(`Account & Personal Information submitted (SPES ID: ${r.data.spesId}). Please wait for the administrator to approve it before you log in.`, true);
+        s.mode = 'login'; s.as = this.portal();
+        this.transition('Registration submitted!', 'Waiting for administrator approval', false);
+        return;
       } else if (form === 'forgot') {
         const r = await M.API.post('/api/forgot', { username: f.username.trim(), batch: f.batch, password: f.password });
         if (!r.ok) this.flash(r.error);
@@ -566,9 +604,9 @@ SPES.App = {
         if (!f.gender) { this.flash('Please select your gender.'); this.render(); return; }
         this.pendingReg = {
           kind: 'google_complete',
-          payload: { accessToken: s.googleToken, name: f.name.trim(), username: f.username.trim(), gender: f.gender, batch: f.batch, privacyAccepted: true }
+          payload: { accessToken: s.googleToken, name: f.name.trim(), username: f.username.trim(), gender: f.gender, batch: f.batch, email: (s.googleData && s.googleData.email) || '', privacyAccepted: true }
         };
-        s.privacyModal = true; this.anim = false; this.render(); return;
+        s.mode = 'pis_form'; this.render(); window.scrollTo({ top: 0, behavior: 'smooth' }); return;
       } else if (form === 'attend') {
         const day = this.selDay('day', u);
         if (!el.photo.files[0]) { this.flash('Please choose an image first.'); this.render(); return; }
@@ -733,7 +771,11 @@ SPES.App = {
     const u = this.user(), V = SPES.View, s = this.s;
     this.applyPrefs(u);
     if (!u) {
-      V.mount(V.auth(s.mode, s.m, s.as, s.googleData, s.googleReset) + (s.privacyModal ? V.privacyConsentModal() : ''));
+      if (s.mode === 'pis_form' && SPES.PisView) {
+        V.mount(SPES.PisView.form((this.pendingReg && this.pendingReg.payload) || {}, s.m));
+      } else {
+        V.mount(V.auth(s.mode, s.m, s.as, s.googleData, s.googleReset) + (s.privacyModal ? V.privacyConsentModal() : ''));
+      }
     } else {
       const tabs = this.TABS[u.role];
       const tab = s.tab && tabs.includes(s.tab) ? s.tab : tabs[0];
@@ -849,7 +891,8 @@ SPES.App = {
       return V.journal(days, n, en, SPES.EventModel.on(d.date), this.jpics, s.m);
     }
     if (tab === 'messages' && SPES.ChatView) return SPES.ChatView.render(u, s.chatPeer, s.chatQ || '');
-    if (tab === 'journals') return '<h2>Beneficiary journals</h2>' + V.entries(SPES.JournalModel.all().filter(j => j.status === 'submitted'), names);
+    if (tab === 'journals') return '<h2>Beneficiary journals</h2>' + V.entries(SPES.JournalModel.all().filter(j => j.status === 'submitted'), names, u.role === 'admin');
+    if (tab === 'personal' && SPES.PisView) return u.role === 'admin' ? SPES.PisView.adminIndex(SPES.BatchModel.all(), M.all(), s.pisBatch, s.pisUser, s.pisQ || '') : '<h1>Not authorized</h1>';
     if (tab === 'review') return u.role === 'admin' ? V.review(A.all().slice().reverse().map(a => ({ ...a, name: names[a.userId] || 'Beneficiary', label: A.SLOTS[a.slot] ? A.SLOTS[a.slot].label : 'Attendance' })), s.m, A.excuses().map(ex => ({ ...ex, name: names[ex.userId] || 'Beneficiary' }))) : '<h1>Not authorized</h1>';
     if (tab === 'answers') {
       if (u.role !== 'admin') return '<h1>Not authorized</h1>';
@@ -879,7 +922,7 @@ SPES.App = {
     }
     if (tab === 'board') {
       const batches = SPES.BatchModel.all(), cur = u.role === 'beneficiary' ? u.batch : (s.board || (batches[0] || {}).code);
-      return V.leaderboard(G.leaderboard(cur), batches, cur, u.role !== 'beneficiary', u.name);
+      return V.leaderboard(G.leaderboard(cur), batches, cur, u.role !== 'beneficiary', u.name, u.role === 'admin');
     }
     if (tab === 'games') return SPES.Games.body(u);
   }

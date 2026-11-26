@@ -2,6 +2,7 @@
 SPES.JournalModel = {
   all() { return SPES.DB.get('journals', []); },
   forUser(id) { return this.all().filter(j => j.userId === id); },
+  pointsForUser(id) { return this.forUser(id).reduce((sum, j) => sum + (Number(j.pointsAwarded) || 0), 0); },
   get(userId, day) { return this.all().find(j => j.userId === userId && j.day === day); },
   save(userId, day, date, f, status) {
     if (status === 'submitted' && f.text.trim().length < 20) return { error: 'Describe your tasks in at least 20 characters before submitting.' };
