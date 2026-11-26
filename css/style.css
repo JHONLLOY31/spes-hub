@@ -854,3 +854,92 @@ body,.card,.stat,.day,.cd,.back,.pills button,.seg,.seg button,.side nav button,
   .pis-top-grid,.pis-grid,.pis-grid3,.pis-kv-grid{grid-template-columns:1fr}
   .pis-traits{grid-template-columns:1fr 1fr}
 }
+
+/* ===== Interactive Hanging Pull-Cord Lamp on Login Pages (User & Admin) ===== */
+.auth{transition:background-color .55s cubic-bezier(.22,1,.36,1),color .45s ease}
+.lamp-rig{
+  position:absolute;top:0;right:clamp(18px,5vw,68px);z-index:20;
+  display:flex;flex-direction:column;align-items:center;
+  background:none;border:0;padding:0 12px 14px;cursor:pointer;color:inherit;
+  -webkit-tap-highlight-color:transparent
+}
+.lamp-wire{display:block;width:2.5px;height:38px;background:linear-gradient(#555,#222)}
+.lamp-cap{display:block;width:18px;height:9px;border-radius:4px 4px 0 0;background:#2b2b2b;border:1px solid #444}
+.lamp-shade{
+  display:block;width:72px;height:34px;border-radius:36px 36px 8px 8px;
+  background:linear-gradient(160deg,#303036,#141418);
+  border:1.5px solid rgba(255,255,255,.16);
+  box-shadow:0 10px 24px rgba(0,0,0,.45),inset 0 2px 4px rgba(255,255,255,.15);
+  transition:border-color .4s ease,box-shadow .4s ease
+}
+.lamp-bulb{
+  display:block;width:24px;height:14px;margin-top:-3px;border-radius:0 0 14px 14px;
+  background:#3b3b40;border:1px solid rgba(255,255,255,.15);
+  transition:background .35s ease,box-shadow .45s ease
+}
+.lamp-cord{
+  display:flex;flex-direction:column;align-items:center;margin-top:2px;
+  transform-origin:top center;transition:transform .22s cubic-bezier(.34,1.56,.64,1)
+}
+.lamp-cord i{display:block;width:2px;height:36px;background:repeating-linear-gradient(to bottom,var(--y) 0 4px,#a67f00 4px 7px)}
+.lamp-cord b{
+  display:block;width:12px;height:12px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#fff3b0,var(--y) 60%,#9a7400);
+  box-shadow:0 3px 10px rgba(255,196,0,.45)
+}
+.lamp-rig:hover .lamp-cord{transform:translateY(5px)}
+.lamp-rig.tug .lamp-cord{animation:lampTug .38s cubic-bezier(.22,1,.36,1)}
+@keyframes lampTug{0%{transform:translateY(0)}35%{transform:translateY(16px)}70%{transform:translateY(-2px)}100%{transform:translateY(0)}}
+.lamp-hint{
+  margin-top:6px;padding:2px 9px;border-radius:999px;font-size:.68rem;font-weight:700;letter-spacing:.02em;
+  background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.8);
+  white-space:nowrap;transition:all .35s ease
+}
+
+/* Warm light beam cone when Lamp is ON */
+.lamp-beam{
+  position:absolute;top:72px;right:calc(clamp(18px,5vw,68px) - 220px);width:540px;height:110vh;
+  pointer-events:none;z-index:0;opacity:0;transform:scaleY(.6);transform-origin:top center;
+  background:conic-gradient(from 154deg at 50% 0%,transparent 0deg,rgba(255,216,77,.36) 22deg,rgba(255,250,224,.55) 28deg,rgba(255,216,77,.34) 36deg,transparent 56deg);
+  filter:blur(14px);
+  transition:opacity .55s cubic-bezier(.22,1,.36,1),transform .55s cubic-bezier(.22,1,.36,1)
+}
+
+/* ===== Lamp ON -> Bright Warm Light Theme on Login Page ===== */
+.auth.lamp-on{background:#faf8f1;color:#111}
+.auth.lamp-on .lamp-beam{opacity:1;transform:scaleY(1)}
+.auth.lamp-on .lamp-shade{border-color:rgba(255,196,0,.7);box-shadow:0 8px 26px rgba(255,196,0,.35)}
+.auth.lamp-on .lamp-bulb{background:#fffbe0;box-shadow:0 0 18px 6px #ffe066,0 0 46px 18px rgba(255,196,0,.65)}
+.auth.lamp-on .lamp-hint{background:#111;border-color:#111;color:var(--y)}
+.auth.lamp-on::before{opacity:.42}
+.auth.lamp-on::after{background:var(--y);opacity:.18}
+.auth.lamp-on .bg-fx::before{background-image:linear-gradient(rgba(17,17,17,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(17,17,17,.06) 1px,transparent 1px)}
+.auth.lamp-on .hero{color:#111}
+.auth.lamp-on .hero p{color:#444}
+.auth.lamp-on .panel{
+  background:rgba(255,255,255,.78);border:1px solid rgba(17,17,17,.12);color:#111;
+  box-shadow:0 24px 64px rgba(17,17,17,.14),inset 0 1px 0 rgba(255,255,255,.95)
+}
+.auth.lamp-on h2,.auth.lamp-on label,.auth.lamp-on .field-lbl{color:#111}
+.auth.lamp-on .muted{color:#555}
+.auth.lamp-on input,.auth.lamp-on select{background:rgba(255,255,255,.92);border:1.5px solid #ddd8c8;color:#111}
+.auth.lamp-on input::placeholder{color:#888}
+.auth.lamp-on input:focus,.auth.lamp-on select:focus{border-color:var(--y);background:#fff;box-shadow:0 0 0 4px rgba(255,196,0,.28)}
+.auth.lamp-on .pw-eye{color:#666}.auth.lamp-on .pw-eye:hover{color:#111}
+.auth.lamp-on .portal-tag{background:#111;border-color:#111;color:var(--y)}
+.auth.lamp-on .link{color:#111;text-decoration-color:var(--y)}
+.auth.lamp-on .back{background:#fff;color:#111;border-color:#ddd}
+.auth.lamp-on .back:hover{background:#111;color:var(--y)}
+.auth.lamp-on .or{color:#666}.auth.lamp-on .or::before,.auth.lamp-on .or::after{background:rgba(17,17,17,.15)}
+.auth.lamp-on .gbtn{border-color:#ddd;box-shadow:0 4px 14px rgba(17,17,17,.08)}
+.auth.lamp-on .msg{background:#fdecea;color:var(--bad);border-color:#f5c2bc}
+.auth.lamp-on .msg.ok{background:#e6f5ec;color:var(--ok);border-color:#b7e4c7}
+.auth.lamp-on .msg.info{background:#fff6d6;color:#6b5200;border-color:#f0d36a}
+.auth.lamp-on .gdd-btn{background:rgba(255,255,255,.92);border-color:#ddd8c8;color:#555}
+.auth.lamp-on .gdd-btn.is-m{background:linear-gradient(135deg,rgba(56,189,248,.22),rgba(37,99,235,.1));border-color:#38bdf8;color:#0c4a6e}
+.auth.lamp-on .gdd-btn.is-f{background:linear-gradient(135deg,rgba(244,114,182,.22),rgba(219,39,119,.1));border-color:#f472b6;color:#831843}
+.auth.lamp-on .gdd-menu{background:rgba(255,255,255,.94);border-color:#e2ddd0;box-shadow:0 18px 40px rgba(17,17,17,.16)}
+.auth.lamp-on .gdd-opt{color:#111}
+.auth.lamp-on .gdd-opt.is-m:hover,.auth.lamp-on .gdd-opt.is-m.on{color:#0c4a6e}
+.auth.lamp-on .gdd-opt.is-f:hover,.auth.lamp-on .gdd-opt.is-f.on{color:#831843}
+@media(max-width:640px){.lamp-wire{height:20px}.lamp-shade{width:56px;height:26px}.lamp-cord i{height:24px}}

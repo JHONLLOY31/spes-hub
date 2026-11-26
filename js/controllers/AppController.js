@@ -1,6 +1,6 @@
 // The controller connects user actions to the Supabase-backed API and tells the views what to draw.
 SPES.App = {
-  s: { mode: 'login', tab: null, m: null, play: null, board: null, cert: false, as: 'user', day: null, jday: null, cal: null, sub: 'account', confirm: false },
+  s: { mode: 'login', tab: null, m: null, play: null, board: null, cert: false, as: 'user', day: null, jday: null, cal: null, sub: 'account', confirm: false, lampOn: false },
   anim: true, jpics: [], jkey: null, draft: null, pendingAtt: null, _syncAt: 0, _syncing: false,
   GAME_ACTS: ['open', 'quit', 'cert', 'answer', 'next', 'retry', 'flip', 'cell', 'mute'],
   TABS: {
@@ -392,6 +392,23 @@ SPES.App = {
       if (!r.ok) { this.flash(r.error); await SPES.API.bootstrap(); this.render(); }
       return;
     }
+    else if (a === 'lamp') {
+      s.lampOn = !s.lampOn;
+      SPES.Sound.play(s.lampOn ? 'lampOn' : 'lampOff');
+      const auth = document.querySelector('#app > .auth');
+      if (auth) auth.classList.toggle('lamp-on', s.lampOn);
+      const rig = document.querySelector('.lamp-rig');
+      if (rig) {
+        rig.setAttribute('aria-pressed', String(s.lampOn));
+        rig.title = s.lampOn ? 'Pull cord to turn lamp OFF (Dark mode)' : 'Pull cord to turn lamp ON (Light mode)';
+        const hint = rig.querySelector('.lamp-hint');
+        if (hint) hint.textContent = s.lampOn ? 'Lamp ON · Light' : 'Pull lamp · Dark';
+        rig.classList.remove('tug');
+        void rig.offsetWidth;
+        rig.classList.add('tug');
+      }
+      return;
+    }
     else if (a === 'mode') { return this.switchAuthMode(d.m); }
     else if (a === 'tab') return this.go(d.t);
     else if (a === 'askout' || a === 'cancelout') { s.confirm = a === 'askout'; this.anim = false; }
@@ -772,7 +789,7 @@ SPES.App = {
       if (s.mode === 'pis_form' && SPES.PisView) {
         V.mount(SPES.PisView.form((this.pendingReg && this.pendingReg.payload) || {}, s.m));
       } else {
-        V.mount(V.auth(s.mode, s.m, s.as, s.googleData, s.googleReset) + (s.privacyModal ? V.privacyConsentModal() : ''));
+        V.mount(V.auth(s.mode, s.m, s.as, s.googleData, s.googleReset, s.lampOn) + (s.privacyModal ? V.privacyConsentModal() : ''));
       }
     } else {
       const tabs = this.TABS[u.role];

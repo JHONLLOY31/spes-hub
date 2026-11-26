@@ -28,11 +28,23 @@ SPES.View = {
       </div>`;
   },
 
-  auth(mode, m, as, gData, gReset) {
-    if (mode === 'forgot') return this.forgot(m, gReset);
-    if (mode === 'google_setup') return this.googleSetup(gData || {}, m);
+  lamp(on) {
+    return `<div class="lamp-beam" aria-hidden="true"></div>
+      <button type="button" class="lamp-rig" data-act="lamp" aria-pressed="${!!on}" title="${on ? 'Pull cord to turn lamp OFF (Dark mode)' : 'Pull cord to turn lamp ON (Light mode)'}">
+        <span class="lamp-wire"></span>
+        <span class="lamp-cap"></span>
+        <span class="lamp-shade"></span>
+        <span class="lamp-bulb"></span>
+        <span class="lamp-cord"><i></i><b></b></span>
+        <span class="lamp-hint">${on ? 'Lamp ON · Light' : 'Pull lamp · Dark'}</span>
+      </button>`;
+  },
+
+  auth(mode, m, as, gData, gReset, lampOn) {
+    if (mode === 'forgot') return this.forgot(m, gReset, lampOn);
+    if (mode === 'google_setup') return this.googleSetup(gData || {}, m, lampOn);
     const reg = mode === 'register', adm = as === 'admin';
-    return `<div class="auth">${this.bgfx()}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>${adm ? 'Review attendance proofs, manage batches and keep track of every SPES beneficiary.' : 'Attendance, work journals and learning games for SPES beneficiaries of the Davao Oriental Provincial Capitol.'}</p></section>
+    return `<div class="auth ${lampOn ? 'lamp-on' : ''}">${this.bgfx()}${this.lamp(lampOn)}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>${adm ? 'Review attendance proofs, manage batches and keep track of every SPES beneficiary.' : 'Attendance, work journals and learning games for SPES beneficiaries of the Davao Oriental Provincial Capitol.'}</p></section>
       <form class="panel" data-form="${mode}">
         ${reg ? this.back('mode', 'Back to log in', 'login') : ''}
         <h2>${reg ? 'Create your account' : adm ? 'Staff sign in' : 'Welcome back'}</h2>
@@ -62,9 +74,9 @@ SPES.View = {
       ${badges && badges.length ? `<h3 style="margin-top:1.5rem">Your badges</h3><div class="row">${badges.map(b => `<span class="tag gold">${b}</span>`).join('')}</div>` : ''}`;
   },
 
-  forgot(m, gReset) {
+  forgot(m, gReset, lampOn) {
     if (gReset) {
-      return `<div class="auth">${this.bgfx()}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Your Google account is verified. You can now create a new password.</p></section>
+      return `<div class="auth ${lampOn ? 'lamp-on' : ''}">${this.bgfx()}${this.lamp(lampOn)}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Your Google account is verified. You can now create a new password.</p></section>
         <form class="panel" data-form="google_reset">${this.back('mode', 'Back to log in', 'login')}<h2>Create new password</h2>
           <span class="portal-tag">Verified: ${this.esc(gReset.email || gReset.username)}</span>
           ${this.msg(m)}
@@ -72,7 +84,7 @@ SPES.View = {
           <label>Confirm new password</label><input name="password2" type="password" required minlength="6" autocomplete="new-password">
           <button class="btn" type="submit" style="width:100%">Save new password</button></form></div>`;
     }
-    return `<div class="auth">${this.bgfx()}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Signed up with Google? Authenticate with Google first before creating a new password.</p></section>
+    return `<div class="auth ${lampOn ? 'lamp-on' : ''}">${this.bgfx()}${this.lamp(lampOn)}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Signed up with Google? Authenticate with Google first before creating a new password.</p></section>
       <form class="panel" data-form="forgot">${this.back('mode', 'Back to log in', 'login')}<h2>Forgot password</h2>${this.msg(m)}
         <p class="muted" style="margin:.2rem 0 .7rem">Google-linked accounts must verify with Google first:</p>
         <button type="button" class="gbtn" data-act="google_reset_start">${this.GOOGLE_G}Verify with Google</button>
@@ -99,8 +111,8 @@ SPES.View = {
       </div>
     </div></div>`;
   },
-  googleSetup(g, m) {
-    return `<div class="auth">${this.bgfx()}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Finish setting up your SPES beneficiary profile so the administrator can approve your account.</p></section>
+  googleSetup(g, m, lampOn) {
+    return `<div class="auth ${lampOn ? 'lamp-on' : ''}">${this.bgfx()}${this.lamp(lampOn)}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Finish setting up your SPES beneficiary profile so the administrator can approve your account.</p></section>
       <form class="panel" data-form="google_complete">${this.back('mode', 'Back to log in', 'login')}<h2>Complete your profile</h2>
         <span class="portal-tag">Google: ${this.esc(g.email || '')}</span>
         ${this.msg(m)}
