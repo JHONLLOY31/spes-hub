@@ -491,6 +491,13 @@ route('PATCH', '/api/profile', 'any', async ({ user, body }) => {
     await uploadDataUrl(storagePath, body.avatar);
     patch.avatar_path = storagePath;
   }
+  if (typeof body.idPhoto === 'string' && body.idPhoto.startsWith('data:image/')) {
+    const storagePath = `avatars/${user.id}_id_${Date.now()}.jpg`;
+    await uploadDataUrl(storagePath, body.idPhoto);
+    const curSettings = patch.settings || { ...(user.settings || {}) };
+    curSettings.idCard = { ...(curSettings.idCard || {}), photo: photoUrl(storagePath) };
+    patch.settings = curSettings;
+  }
   if (!Object.keys(patch).length) fail(400, 'Nothing to update.');
   const { data, error } = await sb.from('profiles').update(patch).eq('id', user.id).select().single();
   if (error) fail(500, error.message);

@@ -119,7 +119,8 @@ Object.assign(SPES.View, {
       <div class="card notes"><h3>My note</h3><p class="muted">Like a Messenger note: a short message that shows above your photo for 24 hours.</p>
         <form data-form="note"><input name="text" maxlength="60" required placeholder="What's on your mind?" value="${this.esc((this.noteLive(u) || {}).text || '')}"><button class="btn">${this.noteLive(u) ? 'Update note' : 'Share note'}</button></form>
         ${this.noteLive(u) ? `<p class="muted">Visible for about ${Math.max(1, Math.ceil((864e5 - (Date.now() - new Date(u.note.at).getTime())) / 36e5))} more hour(s). <button type="button" class="link" data-act="delnote">Delete note</button></p>` : ''}</div>
-      <div class="stats">${stats.map((s, i) => `<div class="stat ${i === 0 ? 'hl' : ''}"><span>${s[0]}</span><b>${s[1]}</b></div>`).join('')}</div>`;
+      <div class="stats">${stats.map((s, i) => `<div class="stat ${i === 0 ? 'hl' : ''}"><span>${s[0]}</span><b>${s[1]}</b></div>`).join('')}</div>
+      ${u.role === 'beneficiary' && SPES.IdCard ? SPES.IdCard.section(u) : ''}`;
   },
 
   settings(u, sub, hist, m) {

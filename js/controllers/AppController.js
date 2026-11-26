@@ -76,6 +76,16 @@ SPES.App = {
         if (r.ok) SPES.UserModel.updateLocal(u.id, r.data.user);
         else { this.flash(r.error); this.render(); }
       });
+      else if (i.classList.contains('idpick') && i.files[0]) this.readImage(i.files[0], 480).then(async img => {
+        const curSettings = { ...(u.settings || {}), idCard: { ...((u.settings || {}).idCard || {}), photo: img } };
+        SPES.UserModel.updateLocal(u.id, { settings: curSettings });
+        this.flash('Formal ID photo updated.', true);
+        this.anim = false;
+        this.render();
+        const r = await SPES.API.patch('/api/profile', { idPhoto: img });
+        if (r.ok) SPES.UserModel.updateLocal(u.id, r.data.user);
+        else { this.flash(r.error); this.render(); }
+      });
     });
 
     root.addEventListener('click', e => {
@@ -441,6 +451,12 @@ SPES.App = {
       if (!r.ok) { this.flash(r.error); await SPES.API.bootstrap(); this.render(); }
       return;
     }
+    else if (a === 'dl_id' && SPES.IdCard) {
+      this.setBusy(btn, true);
+      await SPES.IdCard.download(u, d.side || 'both');
+      this.setBusy(btn, false);
+      return;
+    }
     else if (a === 'sub') s.sub = d.v;
     else if (a === 'theme') return this.pref('theme', d.v);
     else if (a === 'snd') return this.pref('sound', d.v === '1');
@@ -523,6 +539,23 @@ SPES.App = {
           if (r.ok) { M.UserModel.updateLocal(u.id, r.data.user); this.flash('Profile updated.', true); }
           else this.flash(r.error);
         }
+      } else if (form === 'idcard') {
+        const prev = (u.settings && u.settings.idCard) || {};
+        const idCard = {
+          ...prev,
+          fullName: (f.fullName || '').trim(),
+          nickname: (f.nickname || '').trim(),
+          address: (f.address || '').trim(),
+          contact: (f.contact || '').trim(),
+          emgName: (f.emgName || '').trim(),
+          emgRel: (f.emgRel || '').trim(),
+          emgContact: (f.emgContact || '').trim(),
+          effectivity: (f.effectivity || '').trim()
+        };
+        const settings = { ...(u.settings || {}), idCard };
+        const r = await M.API.patch('/api/profile', { settings });
+        if (r.ok) { M.UserModel.updateLocal(u.id, r.data.user); this.flash('SPES ID card details saved! You can download your ID now.', true); }
+        else this.flash(r.error);
       } else if (['keyset', 'keychange', 'keyreset', 'keyunlock'].includes(form)) {
         const action = form.slice(3);
         const r = await M.API.post('/api/answerkey', { action, pw: f.pw, pw2: f.pw2, cur: f.cur, acct: f.acct });

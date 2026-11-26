@@ -679,3 +679,54 @@ body,.card,.stat,.day,.cd,.back,.pills button,.seg,.seg button,.side nav button,
 .clk-date{color:var(--mute);font-size:.78rem;font-weight:600;padding-left:.45rem;border-left:1px solid var(--line)}
 [data-theme=dark] .clk-date{border-left-color:rgba(255,255,255,.16)}
 @media(max-width:520px){.live-clock{height:40px;padding:0 10px;font-size:.78rem}.clk-date{display:none}}
+
+/* ===== SPES ID Card Generator (Yellow 50% / Black 25% / White 25%) ===== */
+.idc-wrap{margin-top:1.2rem}
+.idc-stage{display:flex;flex-wrap:wrap;gap:1.5rem;justify-content:center;margin:1.2rem 0}
+.idc-col{display:flex;flex-direction:column;align-items:center;gap:.45rem}
+.idc-side-lbl{font-size:.74rem;font-weight:800;letter-spacing:.12em;color:var(--mute)}
+.idc-card{
+  width:280px;height:444px;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;
+  background:linear-gradient(180deg,#ffd84d 0%,#ffc400 58%,#efb200 100%);
+  color:#111;border:2px solid #111;box-shadow:0 16px 36px rgba(17,17,17,.22);position:relative;user-select:none
+}
+.idc-top{background:#fff;padding:8px 10px;display:flex;align-items:center;justify-content:space-between;gap:6px;flex:none}
+.idc-top img{width:46px;height:46px;object-fit:contain;flex:none}
+.idc-gov{text-align:center;line-height:1.18;font-size:.54rem;color:#111}
+.idc-gov b{display:block;font-size:.66rem;font-weight:800}
+.idc-subbar{background:#111;color:#fff;text-align:center;padding:5px 8px;flex:none;line-height:1.15}
+.idc-subbar small{display:block;font-size:.46rem;letter-spacing:.04em;opacity:.92}
+.idc-subbar b{display:block;font-size:.78rem;font-weight:800;color:#ffc400;letter-spacing:.02em}
+.idc-body{flex:1;position:relative;display:flex;overflow:hidden}
+.idc-wm{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:195px;height:195px;object-fit:contain;opacity:.13;pointer-events:none}
+.idc-vstrip{width:34px;background:#111;display:flex;align-items:center;justify-content:center;flex:none;z-index:1}
+.idc-vstrip span{writing-mode:vertical-rl;transform:rotate(180deg);color:#ffc400;font-weight:800;font-size:1.15rem;letter-spacing:.08em;white-space:nowrap}
+.idc-main{flex:1;display:flex;flex-direction:column;align-items:center;padding:12px 10px 10px;position:relative;z-index:1;text-align:center}
+.idc-photo-box{width:124px;height:134px;border-radius:10px;background:#fff;padding:3px;border:2px solid #111;box-shadow:0 6px 14px rgba(0,0,0,.22);overflow:hidden;display:grid;place-items:center}
+.idc-photo-box img{width:100%;height:100%;object-fit:cover;border-radius:6px}
+.idc-photo-empty{font-size:.68rem;font-weight:700;color:#666;line-height:1.25}
+.idc-nick{margin-top:10px;background:#111;color:#ffc400;padding:4px 18px;border-radius:999px;font-weight:800;font-size:.98rem;letter-spacing:.03em;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.idc-fullname{margin-top:8px;font-weight:800;font-size:.78rem;line-height:1.2;color:#111;word-break:break-word}
+.idc-role{font-size:.56rem;font-weight:700;color:#222;margin-top:2px}
+.idc-sig{margin-top:auto;width:100%;background:#fff;border:1.5px solid #111;border-radius:9px;padding:6px 8px;line-height:1.2}
+.idc-sig b{display:block;font-size:.68rem;font-weight:800;border-bottom:1.5px solid #111;padding-bottom:2px;margin-bottom:2px}
+.idc-sig span{display:block;font-size:.56rem;font-weight:600;color:#222}
+
+/* Back card */
+.idc-back-head{background:#111;color:#fff;padding:10px 12px;display:flex;align-items:center;gap:9px;flex:none}
+.idc-back-head img{width:38px;height:38px;object-fit:contain;flex:none}
+.idc-back-head b{display:block;color:#ffc400;font-size:.76rem;line-height:1.15}
+.idc-back-head small{display:block;font-size:.58rem;opacity:.88}
+.idc-back-body{flex:1;padding:12px 14px;display:flex;flex-direction:column;position:relative;z-index:1}
+.idc-fld{margin-bottom:10px;position:relative;z-index:1}
+.idc-fld span{display:block;font-size:.64rem;font-weight:800;margin-bottom:3px;color:#111;letter-spacing:.03em}
+.idc-emg-lbl{text-align:center;font-size:.62rem;font-weight:800;margin:8px 0 5px;color:#111;letter-spacing:.03em;position:relative;z-index:1}
+.idc-box{background:#fff;border:1.5px solid #111;border-radius:8px;padding:7px 9px;font-size:.7rem;font-weight:700;color:#111;text-align:center;line-height:1.25;word-break:break-word;position:relative;z-index:1}
+.idc-back-foot{background:#111;color:#fff;text-align:center;padding:10px 12px;flex:none}
+.idc-back-foot small{display:block;font-size:.6rem;opacity:.85}
+.idc-back-foot b{display:block;color:#ffc400;font-size:.86rem;font-weight:800;letter-spacing:.04em;margin-top:2px}
+
+.idc-dl-bar{justify-content:center;margin:.5rem 0 .8rem}
+.idc-photo-row{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem;margin:.5rem 0 .8rem}
+.idc-grid{display:grid;grid-template-columns:1fr 1fr;gap:.65rem 1rem}
+@media(max-width:640px){.idc-grid{grid-template-columns:1fr}.idc-card{width:268px;height:425px}}
