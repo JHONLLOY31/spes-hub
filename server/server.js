@@ -344,15 +344,23 @@ route('POST', '/api/auth/forgot-email', undefined, async ({ req, body }) => {
   const cKey = `reset:${ip}:${raw}`;
   const now = Date.now();
   if ((emailCooldown.get(cKey) || 0) > now) {
-    fail(429, 'Please wait 1 minute before requesting another password reset email.');
+    fail(429, 'Please wait 1 minute before requesting another 6-digit code.');
   }
   emailCooldown.set(cKey, now + 60000);
+
+  const maskEmail = e => {
+    const [u, d] = String(e || '').split('@');
+    if (!u || !d) return '';
+    return `${u.slice(0, Math.min(2, u.length))}${'*'.repeat(Math.max(2, u.length - 2))}@${d}`;
+  };
 
   const q = raw.includes('@')
     ? sb.from('profiles').select('id, name, username, email, role').ilike('email', raw).maybeSingle()
     : sb.from('profiles').select('id, name, username, email, role').ilike('username', raw).maybeSingle();
   const { data: prof } = await q;
 
+  let maskedEmail = '';
+  let mailSent = false;
   if (prof && prof.role === 'beneficiary') {
     let targetEmail = prof.email;
     if (!targetEmail) {
@@ -361,18 +369,99 @@ route('POST', '/api/auth/forgot-email', undefined, async ({ req, body }) => {
       if (uEmail && !uEmail.endsWith('@spes-hub.local')) targetEmail = uEmail.toLowerCase();
     }
     if (targetEmail) {
-      const redirectTo = `${appOrigin(req)}/index.html?flow=email_reset`;
+      maskedEmail = maskEmail(targetEmail);
+      const code = String(crypto.randomInt(100000, 1000000));
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      await sb.from('password_reset_codes').upsert({
+        user_id: prof.id,
+        email: targetEmail,
+        code_hash: sha(code),
+        reset_token_hash: null,
+        attempts: 0,
+        expires_at: expiresAt,
+        created_at: new Date().toISOString()
+      }, { onConflict: 'user_id' });
+
       if (mailer.isMailerConfigured()) {
-        const gen = await sb.auth.admin.generateLink({ type: 'recovery', email: targetEmail, options: { redirectTo } });
-        if (gen.data && gen.data.properties && gen.data.properties.action_link) {
-          await mailer.sendPasswordResetEmail({ to: targetEmail, name: prof.name, resetUrl: gen.data.properties.action_link });
-        }
+        const res = await mailer.sendPasswordResetCodeEmail({ to: targetEmail, name: prof.name, code });
+        mailSent = !!(res && res.ok);
       } else {
-        await sbAuth.auth.resetPasswordForEmail(targetEmail, { redirectTo });
+        await sbAuth.auth.resetPasswordForEmail(targetEmail, { redirectTo: `${appOrigin(req)}/index.html?flow=email_reset` });
       }
     }
   }
-  return [200, { ok: true, message: 'If an account matches that email or username, a password reset verification link has been sent to its registered email address.' }];
+  const configured = mailer.isMailerConfigured();
+  return [200, {
+    ok: true,
+    identifier: raw,
+    maskedEmail,
+    mailerConfigured: configured,
+    mailSent,
+    message: configured
+      ? `A 6-digit verification code has been sent to ${maskedEmail || 'your registered email'}. Enter the code below (valid for 10 minutes).`
+      : 'If an account matches, a reset email has been requested. (Tip: Add GMAIL_USER and GMAIL_APP_PASSWORD in Vercel Environment Variables to send instant 6-digit codes.)'
+  }];
+});
+
+route('POST', '/api/auth/forgot-verify-code', undefined, async ({ body }) => {
+  const raw = str(body.identifier || body.email || body.username, 120).toLowerCase();
+  const code = str(body.code, 10).replace(/\s+/g, '');
+  if (!raw) fail(400, 'Missing email or username. Please start again.');
+  if (!/^\d{6}$/.test(code)) fail(400, 'Enter the 6-digit numeric code sent to your email.');
+
+  const q = raw.includes('@')
+    ? sb.from('profiles').select('id, username, name, email, role').ilike('email', raw).maybeSingle()
+    : sb.from('profiles').select('id, username, name, email, role').ilike('username', raw).maybeSingle();
+  const { data: prof } = await q;
+  if (!prof || prof.role !== 'beneficiary') fail(401, 'Invalid 6-digit code. Please check your email and try again.');
+
+  const { data: row } = await sb.from('password_reset_codes').select('*').eq('user_id', prof.id).maybeSingle();
+  if (!row || !row.code_hash) fail(401, 'No active code found. Please request a new 6-digit code.');
+  if (new Date(row.expires_at).getTime() <= Date.now()) {
+    await sb.from('password_reset_codes').delete().eq('user_id', prof.id);
+    fail(401, 'That 6-digit code has expired. Please click "Resend code".');
+  }
+  if ((row.attempts || 0) >= 5) {
+    await sb.from('password_reset_codes').delete().eq('user_id', prof.id);
+    fail(429, 'Too many wrong attempts. Please request a new 6-digit code.');
+  }
+
+  let matched = sha(code) === row.code_hash;
+  if (!matched && row.email) {
+    const otp = await sbAuth.auth.verifyOtp({ email: row.email, token: code, type: 'recovery' });
+    if (otp && !otp.error && otp.data && otp.data.user && otp.data.user.id === prof.id) matched = true;
+  }
+  if (!matched) {
+    await sb.from('password_reset_codes').update({ attempts: (row.attempts || 0) + 1 }).eq('user_id', prof.id);
+    fail(401, 'Wrong 6-digit code. Please check your email and try again.');
+  }
+
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  await sb.from('password_reset_codes').update({
+    code_hash: null,
+    reset_token_hash: sha(resetToken),
+    attempts: 0,
+    expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString()
+  }).eq('user_id', prof.id);
+
+  return [200, { ok: true, resetToken, email: row.email, username: prof.username, name: prof.name }];
+});
+
+route('POST', '/api/auth/forgot-confirm', undefined, async ({ body }) => {
+  const token = typeof body.resetToken === 'string' ? body.resetToken.trim() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!token) fail(400, 'Verification expired. Please request a new 6-digit code.');
+  if (password.length < 6 || password.length > 100) fail(400, 'New password needs at least 6 characters.');
+
+  const { data: row } = await sb.from('password_reset_codes').select('*').eq('reset_token_hash', sha(token)).maybeSingle();
+  if (!row || new Date(row.expires_at).getTime() <= Date.now()) {
+    fail(401, 'Verification expired. Please request a new 6-digit code.');
+  }
+  const upd = await sb.auth.admin.updateUserById(row.user_id, { password });
+  if (upd.error) fail(500, 'Could not update password: ' + upd.error.message);
+  await sb.from('password_reset_codes').delete().eq('user_id', row.user_id);
+  await logActivity(row.user_id, 'Reset password via 6-digit email code');
+  return [200, { ok: true }];
 });
 
 // ---- Google OAuth password-reset verification ----

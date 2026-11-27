@@ -40,8 +40,8 @@ SPES.View = {
       </button>`;
   },
 
-  auth(mode, m, as, gData, gReset, lampOn, unverifiedEmail) {
-    if (mode === 'forgot') return this.forgot(m, gReset, lampOn);
+  auth(mode, m, as, gData, gReset, lampOn, unverifiedEmail, otpState) {
+    if (mode === 'forgot') return this.forgot(m, gReset, lampOn, otpState);
     if (mode === 'google_setup') return this.googleSetup(gData || {}, m, lampOn);
     const reg = mode === 'register', adm = as === 'admin';
     return `<div class="auth ${lampOn ? 'lamp-on' : ''}">${this.bgfx()}${this.lamp(lampOn)}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>${adm ? 'Review attendance proofs, manage batches and keep track of every SPES beneficiary.' : 'Attendance, work journals and learning games for SPES beneficiaries of the Davao Oriental Provincial Capitol.'}</p></section>
@@ -76,21 +76,36 @@ SPES.View = {
       ${badges && badges.length ? `<h3 style="margin-top:1.5rem">Your badges</h3><div class="row">${badges.map(b => `<span class="tag gold">${b}</span>`).join('')}</div>` : ''}`;
   },
 
-  forgot(m, gReset, lampOn) {
+  forgot(m, gReset, lampOn, otpState) {
     if (gReset) {
       return `<div class="auth ${lampOn ? 'lamp-on' : ''}">${this.bgfx()}${this.lamp(lampOn)}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Your account is verified. You can now create a new password.</p></section>
-        <form class="panel" data-form="google_reset">${this.back('mode', 'Back to log in', 'login')}<h2>Create new password</h2>
+        <form class="panel" data-form="${gReset.viaCode ? 'forgot_confirm' : 'google_reset'}" novalidate>${this.back('mode', 'Back to log in', 'login')}<h2>Create new password</h2>
           <span class="portal-tag">Verified: ${this.esc(gReset.email || gReset.username)}</span>
           ${this.msg(m)}
-          <label>New password</label><input name="password" type="password" required minlength="6" autocomplete="new-password">
-          <label>Confirm new password</label><input name="password2" type="password" required minlength="6" autocomplete="new-password">
+          <label>New password</label><input name="password" type="password" required minlength="6" autocomplete="new-password"><small class="ferr" data-ferr="password"></small>
+          <label>Confirm new password</label><input name="password2" type="password" required minlength="6" autocomplete="new-password"><small class="ferr" data-ferr="password2"></small>
+          <div class="form-err" data-form-err hidden role="alert"></div>
           <button class="btn" type="submit" style="width:100%">Save new password</button></form></div>`;
     }
-    return `<div class="auth ${lampOn ? 'lamp-on' : ''}">${this.bgfx()}${this.lamp(lampOn)}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Authenticate via your registered email or Google account before creating a new password.</p></section>
-      <form class="panel" data-form="forgot_email">${this.back('mode', 'Back to log in', 'login')}<h2>Forgot password</h2>${this.msg(m)}
-        <p class="muted" style="margin:.2rem 0 .7rem">Enter your registered email address or username and we'll send you an authenticated reset link:</p>
-        <label>Email address or Username</label><input name="identifier" required placeholder="you@gmail.com or username">
-        <button class="btn" type="submit" style="width:100%">Send verification email</button>
+    if (otpState && otpState.identifier) {
+      return `<div class="auth ${lampOn ? 'lamp-on' : ''}">${this.bgfx()}${this.lamp(lampOn)}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Check your email inbox (and spam folder) for your 6-digit SPES Hub verification code.</p></section>
+        <form class="panel" data-form="forgot_code" novalidate>${this.back('forgot_restart', 'Change email / username')}<h2>Enter 6-digit code</h2>
+          ${otpState.maskedEmail ? `<span class="portal-tag">Sent to: ${this.esc(otpState.maskedEmail)}</span>` : ''}
+          ${this.msg(m)}
+          <label>6-Digit Auth Code</label>
+          <input name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required placeholder="000000" style="text-align:center;font-size:1.5rem;letter-spacing:.45rem;font-weight:800;font-family:ui-monospace,monospace">
+          <small class="ferr" data-ferr="code"></small>
+          <div class="form-err" data-form-err hidden role="alert"></div>
+          <button class="btn" type="submit" style="width:100%">Verify 6-digit code</button>
+          <p class="muted" style="text-align:center;margin-top:.8rem">Didn't receive the code? <button type="button" class="link" data-act="forgot_resend">Resend code</button></p>
+        </form></div>`;
+    }
+    return `<div class="auth ${lampOn ? 'lamp-on' : ''}">${this.bgfx()}${this.lamp(lampOn)}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Enter your registered email or username to receive a 6-digit authentication code before resetting your password.</p></section>
+      <form class="panel" data-form="forgot_email" novalidate>${this.back('mode', 'Back to log in', 'login')}<h2>Forgot password</h2>${this.msg(m)}
+        <p class="muted" style="margin:.2rem 0 .7rem">We will send a 6-digit verification code to your registered email:</p>
+        <label>Email address or Username</label><input name="identifier" required placeholder="you@gmail.com or username"><small class="ferr" data-ferr="identifier"></small>
+        <div class="form-err" data-form-err hidden role="alert"></div>
+        <button class="btn" type="submit" style="width:100%">Send 6-digit code</button>
         <div class="or"><span>or verify with Google</span></div>
         <button type="button" class="gbtn" data-act="google_reset_start">${this.GOOGLE_G}Verify with Google</button></form></div>`;
   },

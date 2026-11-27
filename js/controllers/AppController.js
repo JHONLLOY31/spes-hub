@@ -501,6 +501,18 @@ SPES.App = {
       location.href = '/api/auth/google?flow=reset';
       return;
     }
+    else if (a === 'forgot_restart') {
+      s.otpState = null; s.googleReset = null; s.googleResetToken = null;
+    }
+    else if (a === 'forgot_resend' && s.otpState && s.otpState.identifier) {
+      this.setBusy(btn, true);
+      const r = await SPES.API.post('/api/auth/forgot-email', { identifier: s.otpState.identifier });
+      this.setBusy(btn, false);
+      if (r.ok) this.flash(r.data.message || 'A new 6-digit code has been sent to your email.', true);
+      else this.flash(r.error);
+      this.render();
+      return;
+    }
     else if (a === 'resend_verify') {
       this.setBusy(btn, true);
       const r = await SPES.API.post('/api/auth/resend-verification', { email: d.email || s.unverifiedEmail });
@@ -861,9 +873,36 @@ SPES.App = {
         this.transition(wasGoogle ? 'Registration submitted!' : 'Check your email!', wasGoogle ? 'Waiting for administrator approval' : 'Verify your email, then wait for approval', false);
         return;
       } else if (form === 'forgot_email') {
-        const r = await M.API.post('/api/auth/forgot-email', { identifier: (f.identifier || '').trim() });
-        if (!r.ok) this.flash(r.error);
-        else this.flash(r.data.message || 'Password reset verification email sent! Check your inbox.', true);
+        this.clearFormErrs(el);
+        const identifier = (f.identifier || '').trim();
+        if (!identifier) { this.markField(el, 'identifier', 'Enter your registered email address or username.'); this.setFormErr(el, 'Please enter your email or username.'); return; }
+        const r = await M.API.post('/api/auth/forgot-email', { identifier });
+        if (!r.ok) { this.setFormErr(el, r.error); return; }
+        s.otpState = { identifier, maskedEmail: r.data.maskedEmail || '' };
+        this.flash(r.data.message || 'A 6-digit code has been sent to your email.', true);
+      } else if (form === 'forgot_code') {
+        this.clearFormErrs(el);
+        const code = (f.code || '').replace(/\s+/g, '');
+        if (!/^\d{6}$/.test(code)) {
+          this.markField(el, 'code', 'Please enter the 6-digit numeric code from your email.');
+          this.setFormErr(el, 'Enter all 6 numbers from your email.');
+          return;
+        }
+        const r = await M.API.post('/api/auth/forgot-verify-code', { identifier: s.otpState && s.otpState.identifier, code });
+        if (!r.ok) { this.markField(el, 'code', r.error); this.setFormErr(el, r.error); return; }
+        s.otpState = null;
+        s.codeResetToken = r.data.resetToken;
+        s.googleReset = { email: r.data.email, username: r.data.username, viaCode: true };
+        this.flash('6-digit code verified! You can now create a new password.', true);
+      } else if (form === 'forgot_confirm') {
+        this.clearFormErrs(el);
+        if ((f.password || '').length < 6) { this.markField(el, 'password', 'Password must be at least 6 characters.'); this.setFormErr(el, 'Password must be at least 6 characters.'); return; }
+        if (f.password !== f.password2) { this.markField(el, 'password2', 'The two passwords do not match.'); this.setFormErr(el, 'The two passwords do not match.'); return; }
+        const r = await M.API.post('/api/auth/forgot-confirm', { resetToken: s.codeResetToken, password: f.password });
+        if (!r.ok) { this.setFormErr(el, r.error); return; }
+        s.codeResetToken = null; s.googleReset = null; s.otpState = null;
+        this.flash('Password updated! You can now log in with your new password.', true);
+        s.mode = 'login'; s.as = this.portal();
       } else if (form === 'forgot') {
         const r = await M.API.post('/api/forgot', { username: f.username.trim(), batch: f.batch, password: f.password });
         if (!r.ok) this.flash(r.error);
@@ -1080,7 +1119,7 @@ SPES.App = {
       if (s.mode === 'pis_form' && SPES.PisView) {
         V.mount(SPES.PisView.form((this.pendingReg && this.pendingReg.payload) || {}, s.m));
       } else {
-        V.mount(V.auth(s.mode, s.m, s.as, s.googleData, s.googleReset, s.lampOn, s.unverifiedEmail) + (s.privacyModal ? V.privacyConsentModal() : ''));
+        V.mount(V.auth(s.mode, s.m, s.as, s.googleData, s.googleReset, s.lampOn, s.unverifiedEmail, s.otpState) + (s.privacyModal ? V.privacyConsentModal() : ''));
       }
     } else if (u.role === 'beneficiary' && !u.pis && SPES.PisView) {
       V.mount(SPES.PisView.form(u, s.m, true));

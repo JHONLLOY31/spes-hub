@@ -143,6 +143,26 @@ async function sendVerificationEmail({ to, name, spesId, verifyUrl }) {
   });
 }
 
+async function sendPasswordResetCodeEmail({ to, name, code }) {
+  const html = layout({
+    badge: 'Password Reset Code',
+    title: 'Your SPES Hub verification code',
+    bodyHtml: `<p>Hi <strong>${escHtml(name || 'SPES Beneficiary')}</strong>,</p>
+      <p>Use the 6-digit verification code below in SPES Hub to reset your password. This code expires in <strong>10 minutes</strong>.</p>
+      <div style="margin:20px 0;padding:18px;background:#111827;border-radius:14px;text-align:center;border:2px solid #facc15">
+        <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#d1d5db;margin-bottom:6px">6-Digit Auth Code</div>
+        <div style="font-size:34px;font-weight:900;letter-spacing:10px;color:#facc15;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">${escHtml(code)}</div>
+      </div>
+      <p style="color:#6b7280;font-size:13px">Never share this code with anyone. If you did not request a password reset, you can safely ignore this email.</p>`
+  });
+  return sendEmail({
+    to,
+    subject: `${code} is your SPES Hub password reset code`,
+    html,
+    text: `Hi ${name || 'SPES Beneficiary'},\n\nYour SPES Hub 6-digit password reset code is: ${code}\n\nThis code expires in 10 minutes. If you did not request this, ignore this email.`
+  });
+}
+
 async function sendPasswordResetEmail({ to, name, resetUrl }) {
   const html = layout({
     badge: 'Password Reset',
@@ -239,6 +259,7 @@ module.exports = {
   isMailerConfigured,
   sendEmail,
   sendVerificationEmail,
+  sendPasswordResetCodeEmail,
   sendPasswordResetEmail,
   sendApprovalEmail,
   sendDeclinedEmail,
