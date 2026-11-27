@@ -39,7 +39,7 @@ SPES.PisView = {
           <button type="button" class="btn alt" data-act="${postLogin ? 'logout' : 'pis_cancel'}" style="margin:0 0 0 auto">${postLogin ? 'Log out' : 'Back'}</button>
         </div>
         ${SPES.View.msg(m)}
-        <form data-form="pis_submit" class="pis-form">
+        <form data-form="pis_submit" class="pis-form" novalidate>
           <!-- TOP HEADER -->
           <section class="card pis-sec">
             <div class="pis-top-grid">
@@ -225,6 +225,8 @@ SPES.PisView = {
               <input type="checkbox" name="privacyConsent" value="1" required>
               <span>I have read and agree to the Data Privacy Notice above and consent to the collection and processing of my information for the stated purposes.</span>
             </label>
+            <small class="ferr" data-ferr="privacyConsent"></small>
+            <div class="form-err" data-form-err hidden role="alert"></div>
             <div class="row" style="margin-top:1rem">
               <button type="button" class="btn alt" data-act="${postLogin ? 'logout' : 'pis_cancel'}">${postLogin ? 'Log out' : 'Back'}</button>
               <button type="submit" class="btn">${postLogin ? 'Submit Personal Information &amp; Continue' : 'Submit Personal Information &amp; Register'}</button>

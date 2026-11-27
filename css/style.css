@@ -988,3 +988,13 @@ body,.card,.stat,.day,.cd,.back,.pills button,.seg,.seg button,.side nav button,
 .qr-box canvas{display:block;max-width:100%;height:auto}
 .qr-reader{width:100%;max-width:420px;margin:0 auto;border-radius:16px;overflow:hidden;border:2px dashed var(--line);min-height:120px}
 .qr-result{border-left:5px solid var(--ok);animation:cardRise .28s cubic-bezier(.22,1,.36,1) both}
+
+/* Inline per-field & bottom form validation warnings (preserves typed inputs) */
+.ferr{display:block;color:#dc2626;font-size:.78rem;font-weight:600;margin:.25rem 0 .15rem;line-height:1.35}
+.ferr:empty{display:none}
+.field-bad{border-color:#dc2626!important;box-shadow:0 0 0 3px rgba(220,38,38,.16)!important}
+.form-err{margin:.85rem 0 .45rem;padding:.7rem .9rem;border-radius:12px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;font-size:.86rem;font-weight:600;line-height:1.45}
+.form-err.ok{background:#ecfdf5;border-color:#a7f3d0;color:#065f46}
+body.dark .ferr,.auth:not(.lamp-on) .ferr{color:#fca5a5}
+body.dark .form-err,.auth:not(.lamp-on) .form-err{background:rgba(127,29,29,.42);border-color:rgba(248,113,113,.45);color:#fecaca}
+body.dark .form-err.ok,.auth:not(.lamp-on) .form-err.ok{background:rgba(6,78,59,.45);border-color:rgba(52,211,153,.45);color:#a7f3d0}

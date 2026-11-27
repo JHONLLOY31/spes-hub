@@ -45,16 +45,17 @@ SPES.View = {
     if (mode === 'google_setup') return this.googleSetup(gData || {}, m, lampOn);
     const reg = mode === 'register', adm = as === 'admin';
     return `<div class="auth ${lampOn ? 'lamp-on' : ''}">${this.bgfx()}${this.lamp(lampOn)}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>${adm ? 'Review attendance proofs, manage batches and keep track of every SPES beneficiary.' : 'Attendance, work journals and learning games for SPES beneficiaries of the Davao Oriental Provincial Capitol.'}</p></section>
-      <form class="panel" data-form="${mode}">
+      <form class="panel" data-form="${mode}" ${reg ? 'novalidate' : ''}>
         ${reg ? this.back('mode', 'Back to log in', 'login') : ''}
         <h2>${reg ? 'Create your account' : adm ? 'Staff sign in' : 'Welcome back'}</h2>
         ${reg ? '' : `<span class="portal-tag">${adm ? 'Administrator and Office Head' : 'Beneficiary login'}</span>`}
         ${this.msg(m)}
         ${!reg && !adm && unverifiedEmail ? `<button type="button" class="btn alt" style="width:100%;margin:.2rem 0 .8rem" data-act="resend_verify" data-email="${this.esc(unverifiedEmail)}">Resend verification email</button>` : ''}
-        ${reg ? `<label>Full name</label><input name="name" required>${this.sexPicker()}<label>Email address</label><input name="email" type="email" required autocomplete="email" placeholder="you@gmail.com">` : ''}
-        <label>${reg || adm ? 'Username' : 'Username or Email'}</label><input name="username" required autocomplete="username">
-        <label>Password</label><input name="password" type="password" required autocomplete="${reg ? 'new-password' : 'current-password'}">
-        ${reg ? '<label>Batch code</label><input name="batch" required placeholder="e.g. B1-2026"><small class="muted">We will send a verification link to your email after registration.</small>' : ''}
+        ${reg ? `<label>Full name</label><input name="name" required><small class="ferr" data-ferr="name"></small>${this.sexPicker()}<small class="ferr" data-ferr="gender"></small><label>Email address</label><input name="email" type="email" required autocomplete="email" placeholder="you@gmail.com"><small class="ferr" data-ferr="email"></small>` : ''}
+        <label>${reg || adm ? 'Username' : 'Username or Email'}</label><input name="username" required autocomplete="username">${reg ? '<small class="ferr" data-ferr="username"></small>' : ''}
+        <label>Password</label><input name="password" type="password" required autocomplete="${reg ? 'new-password' : 'current-password'}">${reg ? '<small class="ferr" data-ferr="password"></small>' : ''}
+        ${reg ? '<label>Batch code</label><input name="batch" required placeholder="e.g. B1-2026"><small class="ferr" data-ferr="batch"></small><small class="muted">We will send a verification link to your email after registration.</small>' : ''}
+        <div class="form-err" data-form-err hidden role="alert"></div>
         ${reg || adm ? '' : '<p style="margin:.6rem 0 0;text-align:right"><button type="button" class="link" data-act="mode" data-m="forgot">Forgot password?</button></p>'}<button class="btn" type="submit" style="width:100%">${reg ? 'Create account' : 'Log in as ' + (adm ? 'Admin' : 'User')}</button>
         ${adm ? '' : `<div class="or"><span>or</span></div><button type="button" class="gbtn" data-act="google">${this.GOOGLE_G}${reg ? 'Sign up with Google' : 'Continue with Google'}</button>`}
         ${reg || adm ? '' : '<p class="muted">New beneficiary? <button type="button" class="link" data-act="mode" data-m="register">Register</button></p>'}
@@ -113,14 +114,15 @@ SPES.View = {
   },
   googleSetup(g, m, lampOn) {
     return `<div class="auth ${lampOn ? 'lamp-on' : ''}">${this.bgfx()}${this.lamp(lampOn)}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Finish setting up your SPES beneficiary profile so the administrator can approve your account.</p></section>
-      <form class="panel" data-form="google_complete">${this.back('mode', 'Back to log in', 'login')}<h2>Complete your profile</h2>
+      <form class="panel" data-form="google_complete" novalidate>${this.back('mode', 'Back to log in', 'login')}<h2>Complete your profile</h2>
         <span class="portal-tag">Google: ${this.esc(g.email || '')}</span>
         ${this.msg(m)}
-        <label>Full name</label><input name="name" required value="${this.esc(g.suggestedName || '')}">
-        <label>Username</label><input name="username" required value="${this.esc(g.suggestedUsername || '')}" pattern="[A-Za-z0-9_.]{3,30}">
-        ${this.sexPicker()}
-        <label>Batch code</label><input name="batch" required placeholder="e.g. SPES-2026-DEMO">
+        <label>Full name</label><input name="name" required value="${this.esc(g.suggestedName || '')}"><small class="ferr" data-ferr="name"></small>
+        <label>Username</label><input name="username" required value="${this.esc(g.suggestedUsername || '')}" pattern="[A-Za-z0-9_.]{3,30}"><small class="ferr" data-ferr="username"></small>
+        ${this.sexPicker()}<small class="ferr" data-ferr="gender"></small>
+        <label>Batch code</label><input name="batch" required placeholder="e.g. SPES-2026-DEMO"><small class="ferr" data-ferr="batch"></small>
         <small class="muted">Your SPES ID will be generated after registration.</small>
+        <div class="form-err" data-form-err hidden role="alert"></div>
         <button class="btn" type="submit" style="width:100%">Finish registration</button></form></div>`;
   },
   logoutModal() {

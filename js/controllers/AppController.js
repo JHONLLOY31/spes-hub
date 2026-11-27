@@ -30,6 +30,9 @@ SPES.App = {
         btn.classList.add(val === 'Male' ? 'is-m' : 'is-f');
         box.querySelectorAll('[data-gdd-pick]').forEach(o => o.classList.toggle('on', o === pick));
         box.classList.remove('open'); btn.setAttribute('aria-expanded', 'false');
+        btn.classList.remove('field-bad');
+        const gErr = box.closest('form') && box.closest('form').querySelector('[data-ferr="gender"]');
+        if (gErr) gErr.textContent = '';
         return;
       }
       if (!e.target.closest('[data-gdd]')) {
@@ -37,6 +40,14 @@ SPES.App = {
       }
     });
     root.addEventListener('input', e => {
+      if (e.target && e.target.classList && e.target.classList.contains('field-bad')) {
+        e.target.classList.remove('field-bad');
+        const fm = e.target.closest('form');
+        const fe = fm && e.target.name && fm.querySelector(`[data-ferr="${e.target.name}"]`);
+        if (fe) fe.textContent = '';
+        const sib = e.target.nextElementSibling;
+        if (sib && sib.classList && sib.classList.contains('ferr') && !sib.dataset.ferr) sib.remove();
+      }
       if (e.target.id === 'classSearch') { this.s.roomQ = e.target.value; this.applySearch(); }
       if (e.target.id === 'chatSearch') {
         this.s.chatQ = e.target.value;
@@ -75,6 +86,19 @@ SPES.App = {
     });
     root.addEventListener('click', () => { if (this.s.keyOpen) this.s.keyOpen = Date.now(); }, true);
     root.addEventListener('change', e => {
+      if (e.target && e.target.classList && e.target.classList.contains('field-bad')) {
+        e.target.classList.remove('field-bad');
+        const fm = e.target.closest('form');
+        const fe = fm && e.target.name && fm.querySelector(`[data-ferr="${e.target.name}"]`);
+        if (fe) fe.textContent = '';
+        const sib = e.target.nextElementSibling;
+        if (sib && sib.classList && sib.classList.contains('ferr') && !sib.dataset.ferr) sib.remove();
+      }
+      if (e.target.name === 'privacyConsent' && e.target.checked) {
+        const fm = e.target.closest('form');
+        const fe = fm && fm.querySelector('[data-ferr="privacyConsent"]');
+        if (fe) fe.textContent = '';
+      }
       if (e.target.id === 'attDate' && e.target.value) { this.s.roomDate = e.target.value; this.render(); }
       if (e.target.id === 'privacyAgreeChk') { const b = document.getElementById('privacyAgreeBtn'); if (b) b.disabled = !e.target.checked; }
     });
@@ -669,6 +693,109 @@ SPES.App = {
     this.render();
   },
 
+  setFormErr(el, msg, ok = false) {
+    const box = el && el.querySelector('[data-form-err]');
+    if (!box) return false;
+    box.textContent = msg || '';
+    box.classList.toggle('ok', !!ok);
+    box.hidden = !msg;
+    if (msg) box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return true;
+  },
+
+  clearFormErrs(el) {
+    if (!el) return;
+    el.querySelectorAll('.field-bad').forEach(x => x.classList.remove('field-bad'));
+    el.querySelectorAll('[data-ferr]').forEach(x => { x.textContent = ''; });
+    el.querySelectorAll('small.ferr:not([data-ferr])').forEach(x => x.remove());
+    this.setFormErr(el, '');
+  },
+
+  markField(el, name, msg) {
+    const fe = el.querySelector(`[data-ferr="${name}"]`);
+    if (fe) fe.textContent = msg;
+    if (name === 'gender') {
+      const btn = el.querySelector('[data-gdd-toggle]');
+      if (btn) btn.classList.add('field-bad');
+      return btn;
+    }
+    const inp = el.querySelector(`[name="${name}"]`);
+    if (inp) inp.classList.add('field-bad');
+    return inp;
+  },
+
+  validateAccountForm(el, f, isGoogle = false) {
+    this.clearFormErrs(el);
+    const bad = [];
+    if (!(f.name || '').trim()) bad.push(this.markField(el, 'name', 'Please enter your full name.'));
+    if (!['Male', 'Female'].includes(f.gender)) bad.push(this.markField(el, 'gender', 'Please select your gender.'));
+    if (!isGoogle) {
+      const email = (f.email || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) bad.push(this.markField(el, 'email', 'Enter a valid email address (e.g. name@gmail.com).'));
+    }
+    const un = (f.username || '').trim();
+    if (!/^[A-Za-z0-9_.]{3,30}$/.test(un)) bad.push(this.markField(el, 'username', 'Use 3–30 letters, numbers, dots (.) or underscores (_) with no spaces.'));
+    if (!isGoogle) {
+      const pw = f.password || '';
+      if (pw.length < 6 || pw.length > 100) bad.push(this.markField(el, 'password', 'Password must be at least 6 characters.'));
+    }
+    if (!(f.batch || '').trim()) bad.push(this.markField(el, 'batch', 'Enter the batch code given by your administrator.'));
+    if (bad.length) {
+      this.setFormErr(el, `Please complete or fix the ${bad.length} highlighted field${bad.length > 1 ? 's' : ''} above before continuing.`);
+      const first = bad.find(Boolean);
+      if (first && first.focus) { first.scrollIntoView({ behavior: 'smooth', block: 'center' }); first.focus(); }
+      return false;
+    }
+    return true;
+  },
+
+  validatePisForm(el) {
+    this.clearFormErrs(el);
+    let firstBad = null;
+    let missingCount = 0;
+    const sections = new Set();
+    const fields = [...el.querySelectorAll('input[required], select[required], textarea[required]')];
+    for (const inp of fields) {
+      if (inp.type === 'radio') continue;
+      if (inp.name === 'privacyConsent') {
+        if (!inp.checked) {
+          missingCount++;
+          const fe = el.querySelector('[data-ferr="privacyConsent"]');
+          if (fe) fe.textContent = 'You must check the Data Privacy Consent box before submitting.';
+          sections.add('VII. Data Privacy Consent');
+          if (!firstBad) firstBad = inp;
+        }
+        continue;
+      }
+      const val = (inp.value || '').trim();
+      let errMsg = '';
+      if (!val) errMsg = 'This field is required.';
+      else if (inp.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) errMsg = 'Please enter a valid email address.';
+      else if (inp.type === 'number' && ((inp.min && Number(val) < Number(inp.min)) || (inp.max && Number(val) > Number(inp.max)))) {
+        errMsg = `Enter a number between ${inp.min || 0} and ${inp.max || 99}.`;
+      }
+      if (errMsg) {
+        missingCount++;
+        inp.classList.add('field-bad');
+        const note = document.createElement('small');
+        note.className = 'ferr';
+        note.textContent = errMsg;
+        inp.insertAdjacentElement('afterend', note);
+        const sec = inp.closest('.pis-sec');
+        const h2 = sec && sec.querySelector('h2');
+        sections.add(h2 ? h2.textContent.trim() : 'Header / Basic Info');
+        if (!firstBad) firstBad = inp;
+      }
+    }
+    if (missingCount > 0) {
+      const secList = [...sections].join(', ');
+      this.setFormErr(el, `Please fill in ${missingCount} required field${missingCount > 1 ? 's' : ''} in: ${secList}.`);
+      if (firstBad) { firstBad.scrollIntoView({ behavior: 'smooth', block: 'center' }); if (firstBad.focus) firstBad.focus(); }
+      return false;
+    }
+    return true;
+  },
+
   async submit(form, el, mode, submitter) {
     const f = Object.fromEntries(new FormData(el).entries()), s = this.s, u = this.user(), M = SPES;
     const btn = submitter || el.querySelector('button[type=submit], button:not([type])');
@@ -690,23 +817,28 @@ SPES.App = {
           return;
         }
       } else if (form === 'register') {
-        if (!f.gender) { this.flash('Please select your gender.'); this.render(); return; }
+        if (!this.validateAccountForm(el, f, false)) return;
         const email = (f.email || '').trim().toLowerCase();
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { this.flash('Please enter a valid email address.'); this.render(); return; }
         const r = await M.API.post('/api/register', { ...f, email, username: f.username.trim(), name: f.name.trim(), privacyAccepted: true });
-        if (!r.ok) { this.flash(r.error); this.render(); return; }
+        if (!r.ok) {
+          if (/username/i.test(r.error)) this.markField(el, 'username', r.error);
+          else if (/email/i.test(r.error)) this.markField(el, 'email', r.error);
+          else if (/batch/i.test(r.error)) this.markField(el, 'batch', r.error);
+          this.setFormErr(el, r.error);
+          return;
+        }
         this.flash(`Account created (SPES ID: ${r.data.spesId})! A verification link has been sent to ${email}. Please verify your email and wait for administrator approval.`, true);
         s.mode = 'login'; s.as = this.portal();
         this.transition('Check your email!', 'Verify your email, then wait for approval', false);
         return;
       } else if (form === 'pis_submit') {
+        if (!this.validatePisForm(el)) return;
         const pis = SPES.PisView.collect(el);
-        if (!pis.privacyConsent) { this.flash('You must agree to the Data Privacy Consent before submitting.'); this.render(); return; }
         const photoFile = el.pisPhoto && el.pisPhoto.files && el.pisPhoto.files[0];
         const pisPhoto = photoFile ? await this.readImage(photoFile, 480) : null;
         if (u) {
           const r = await M.API.post('/api/profile/pis', { pis, pisPhoto });
-          if (!r.ok) { this.flash(r.error); this.render(); return; }
+          if (!r.ok) { this.setFormErr(el, r.error); return; }
           SPES.UserModel.updateLocal(u.id, r.data.user);
           SPES.DB.set('me', r.data.user);
           s.tab = null; this.anim = true;
@@ -718,7 +850,7 @@ SPES.App = {
         const endpoint = this.pendingReg.kind === 'google_complete' ? '/api/auth/google/complete' : '/api/register';
         const regEmail = this.pendingReg.payload.email || '';
         const r = await M.API.post(endpoint, { ...this.pendingReg.payload, pis, pisPhoto, privacyAccepted: true });
-        if (!r.ok) { this.flash(r.error); this.render(); return; }
+        if (!r.ok) { this.setFormErr(el, r.error); return; }
         const wasGoogle = this.pendingReg.kind === 'google_complete';
         this.pendingReg = null;
         if (wasGoogle) { s.googleToken = null; s.googleData = null; }
@@ -746,11 +878,16 @@ SPES.App = {
           s.mode = 'login'; s.as = this.portal();
         }
       } else if (form === 'google_complete') {
-        if (!f.gender) { this.flash('Please select your gender.'); this.render(); return; }
+        if (!this.validateAccountForm(el, f, true)) return;
         const r = await M.API.post('/api/auth/google/complete', {
           accessToken: s.googleToken, name: f.name.trim(), username: f.username.trim(), gender: f.gender, batch: f.batch, email: (s.googleData && s.googleData.email) || '', privacyAccepted: true
         });
-        if (!r.ok) { this.flash(r.error); this.render(); return; }
+        if (!r.ok) {
+          if (/username/i.test(r.error)) this.markField(el, 'username', r.error);
+          else if (/batch/i.test(r.error)) this.markField(el, 'batch', r.error);
+          this.setFormErr(el, r.error);
+          return;
+        }
         s.googleToken = null; s.googleData = null;
         this.flash(`Account created (SPES ID: ${r.data.spesId}). Please wait for the administrator to approve it before you log in.`, true);
         s.mode = 'login'; s.as = this.portal();
