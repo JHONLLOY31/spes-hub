@@ -672,7 +672,7 @@ SPES.App = {
   async submit(form, el, mode, submitter) {
     const f = Object.fromEntries(new FormData(el).entries()), s = this.s, u = this.user(), M = SPES;
     const btn = submitter || el.querySelector('button[type=submit], button:not([type])');
-    const needsNet = !['attend', 'gtype', 'register', 'google_complete', 'chatmsg', 'chatedit'].includes(form);
+    const needsNet = !['attend', 'gtype', 'chatmsg', 'chatedit'].includes(form);
     if (needsNet) this.setBusy(btn, true);
 
     try {
@@ -693,14 +693,28 @@ SPES.App = {
         if (!f.gender) { this.flash('Please select your gender.'); this.render(); return; }
         const email = (f.email || '').trim().toLowerCase();
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { this.flash('Please enter a valid email address.'); this.render(); return; }
-        this.pendingReg = { kind: 'register', payload: { ...f, email, username: f.username.trim(), name: f.name.trim(), privacyAccepted: true } };
-        s.mode = 'pis_form'; this.render(); window.scrollTo({ top: 0, behavior: 'smooth' }); return;
+        const r = await M.API.post('/api/register', { ...f, email, username: f.username.trim(), name: f.name.trim(), privacyAccepted: true });
+        if (!r.ok) { this.flash(r.error); this.render(); return; }
+        this.flash(`Account created (SPES ID: ${r.data.spesId})! A verification link has been sent to ${email}. Please verify your email and wait for administrator approval.`, true);
+        s.mode = 'login'; s.as = this.portal();
+        this.transition('Check your email!', 'Verify your email, then wait for approval', false);
+        return;
       } else if (form === 'pis_submit') {
-        if (!this.pendingReg) { s.mode = 'register'; this.render(); return; }
         const pis = SPES.PisView.collect(el);
         if (!pis.privacyConsent) { this.flash('You must agree to the Data Privacy Consent before submitting.'); this.render(); return; }
         const photoFile = el.pisPhoto && el.pisPhoto.files && el.pisPhoto.files[0];
         const pisPhoto = photoFile ? await this.readImage(photoFile, 480) : null;
+        if (u) {
+          const r = await M.API.post('/api/profile/pis', { pis, pisPhoto });
+          if (!r.ok) { this.flash(r.error); this.render(); return; }
+          SPES.UserModel.updateLocal(u.id, r.data.user);
+          SPES.DB.set('me', r.data.user);
+          s.tab = null; this.anim = true;
+          this.flash('Personal Information saved! Welcome to SPES Hub.', true);
+          this.transition('Profile complete!', r.data.user.name, true);
+          return;
+        }
+        if (!this.pendingReg) { s.mode = 'register'; this.render(); return; }
         const endpoint = this.pendingReg.kind === 'google_complete' ? '/api/auth/google/complete' : '/api/register';
         const regEmail = this.pendingReg.payload.email || '';
         const r = await M.API.post(endpoint, { ...this.pendingReg.payload, pis, pisPhoto, privacyAccepted: true });
@@ -733,11 +747,15 @@ SPES.App = {
         }
       } else if (form === 'google_complete') {
         if (!f.gender) { this.flash('Please select your gender.'); this.render(); return; }
-        this.pendingReg = {
-          kind: 'google_complete',
-          payload: { accessToken: s.googleToken, name: f.name.trim(), username: f.username.trim(), gender: f.gender, batch: f.batch, email: (s.googleData && s.googleData.email) || '', privacyAccepted: true }
-        };
-        s.mode = 'pis_form'; this.render(); window.scrollTo({ top: 0, behavior: 'smooth' }); return;
+        const r = await M.API.post('/api/auth/google/complete', {
+          accessToken: s.googleToken, name: f.name.trim(), username: f.username.trim(), gender: f.gender, batch: f.batch, email: (s.googleData && s.googleData.email) || '', privacyAccepted: true
+        });
+        if (!r.ok) { this.flash(r.error); this.render(); return; }
+        s.googleToken = null; s.googleData = null;
+        this.flash(`Account created (SPES ID: ${r.data.spesId}). Please wait for the administrator to approve it before you log in.`, true);
+        s.mode = 'login'; s.as = this.portal();
+        this.transition('Registration submitted!', 'Waiting for administrator approval', false);
+        return;
       } else if (form === 'attend') {
         const day = this.selDay('day', u);
         if (!el.photo.files[0]) { this.flash('Please choose an image first.'); this.render(); return; }
@@ -927,6 +945,8 @@ SPES.App = {
       } else {
         V.mount(V.auth(s.mode, s.m, s.as, s.googleData, s.googleReset, s.lampOn, s.unverifiedEmail) + (s.privacyModal ? V.privacyConsentModal() : ''));
       }
+    } else if (u.role === 'beneficiary' && !u.pis && SPES.PisView) {
+      V.mount(SPES.PisView.form(u, s.m, true));
     } else {
       const tabs = this.TABS[u.role];
       const tab = s.tab && tabs.includes(s.tab) ? s.tab : tabs[0];

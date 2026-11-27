@@ -683,6 +683,22 @@ route('PATCH', '/api/profile', 'any', async ({ user, body }) => {
   return [200, { user: mapProfile(data) }];
 });
 
+route('POST', '/api/profile/pis', ['beneficiary'], async ({ user, body }) => {
+  if (!body.pis || typeof body.pis !== 'object') fail(400, 'Please complete the Personal Information Sheet.');
+  const { avatarPath, pis, settings: pisSettings } = await preparePis(user.id, { ...body, name: user.name });
+  const mergedSettings = {
+    ...(user.settings || {}),
+    ...pisSettings,
+    idCard: { ...((user.settings && user.settings.idCard) || {}), ...(pisSettings.idCard || {}) }
+  };
+  const patch = { pis, settings: mergedSettings };
+  if (avatarPath) patch.avatar_path = avatarPath;
+  const { data, error } = await sb.from('profiles').update(patch).eq('id', user.id).select().single();
+  if (error) fail(500, 'Could not save personal information: ' + error.message);
+  await logActivity(user.id, 'Completed Personal Information Sheet');
+  return [200, { user: mapProfile(data) }];
+});
+
 route('POST', '/api/profile/password', 'any', async ({ user, body }) => {
   const cur = typeof body.cur === 'string' ? body.cur : '';
   const next = typeof body.next === 'string' ? body.next : '';

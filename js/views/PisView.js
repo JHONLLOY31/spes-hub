@@ -21,7 +21,7 @@ SPES.PisView = {
     'Peer pressure / relationship with friends'
   ],
 
-  form(seed = {}, m = null) {
+  form(seed = {}, m = null, postLogin = false) {
     const today = new Date().toLocaleDateString('en-CA');
     const chk = (name, vals) => `<div class="pis-chks">${vals.map(v => `<label class="pis-chk"><input type="checkbox" name="${name}" value="${this.e(v)}"><span>${this.e(v)}</span></label>`).join('')}</div>`;
     const rad = (name, vals, def = '') => `<div class="pis-chks">${vals.map((v, i) => `<label class="pis-chk"><input type="radio" name="${name}" value="${this.e(v)}" ${(def ? v === def : i === 0) ? 'checked' : ''} required><span>${this.e(v)}</span></label>`).join('')}</div>`;
@@ -32,9 +32,11 @@ SPES.PisView = {
           <img src="img/logo.png" alt="SPES Logo">
           <div>
             <h1>Personal Information Sheet</h1>
-            <p class="muted">Complete all sections below to finish your SPES Hub registration. Your information will go to your profile and will be reviewed by the Administrator before approval.</p>
+            <p class="muted">${postLogin
+              ? 'Welcome to SPES Hub! Before entering your dashboard, please complete all sections of your Personal Information Sheet below. Your information will be saved to your profile.'
+              : 'Complete all sections below to finish your SPES Hub registration. Your information will go to your profile and will be reviewed by the Administrator before approval.'}</p>
           </div>
-          <button type="button" class="btn alt" data-act="pis_cancel" style="margin:0 0 0 auto">Back</button>
+          <button type="button" class="btn alt" data-act="${postLogin ? 'logout' : 'pis_cancel'}" style="margin:0 0 0 auto">${postLogin ? 'Log out' : 'Back'}</button>
         </div>
         ${SPES.View.msg(m)}
         <form data-form="pis_submit" class="pis-form">
@@ -224,8 +226,8 @@ SPES.PisView = {
               <span>I have read and agree to the Data Privacy Notice above and consent to the collection and processing of my information for the stated purposes.</span>
             </label>
             <div class="row" style="margin-top:1rem">
-              <button type="button" class="btn alt" data-act="pis_cancel">Back</button>
-              <button type="submit" class="btn">Submit Personal Information &amp; Register</button>
+              <button type="button" class="btn alt" data-act="${postLogin ? 'logout' : 'pis_cancel'}">${postLogin ? 'Log out' : 'Back'}</button>
+              <button type="submit" class="btn">${postLogin ? 'Submit Personal Information &amp; Continue' : 'Submit Personal Information &amp; Register'}</button>
             </div>
           </section>
         </form>
