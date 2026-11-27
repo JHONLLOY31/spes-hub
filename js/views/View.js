@@ -40,7 +40,7 @@ SPES.View = {
       </button>`;
   },
 
-  auth(mode, m, as, gData, gReset, lampOn) {
+  auth(mode, m, as, gData, gReset, lampOn, unverifiedEmail) {
     if (mode === 'forgot') return this.forgot(m, gReset, lampOn);
     if (mode === 'google_setup') return this.googleSetup(gData || {}, m, lampOn);
     const reg = mode === 'register', adm = as === 'admin';
@@ -50,10 +50,11 @@ SPES.View = {
         <h2>${reg ? 'Create your account' : adm ? 'Staff sign in' : 'Welcome back'}</h2>
         ${reg ? '' : `<span class="portal-tag">${adm ? 'Administrator and Office Head' : 'Beneficiary login'}</span>`}
         ${this.msg(m)}
-        ${reg ? `<label>Full name</label><input name="name" required>${this.sexPicker()}` : ''}
-        <label>Username</label><input name="username" required autocomplete="username">
+        ${!reg && !adm && unverifiedEmail ? `<button type="button" class="btn alt" style="width:100%;margin:.2rem 0 .8rem" data-act="resend_verify" data-email="${this.esc(unverifiedEmail)}">Resend verification email</button>` : ''}
+        ${reg ? `<label>Full name</label><input name="name" required>${this.sexPicker()}<label>Email address</label><input name="email" type="email" required autocomplete="email" placeholder="you@gmail.com">` : ''}
+        <label>${reg || adm ? 'Username' : 'Username or Email'}</label><input name="username" required autocomplete="username">
         <label>Password</label><input name="password" type="password" required autocomplete="${reg ? 'new-password' : 'current-password'}">
-        ${reg ? '<label>Batch code</label><input name="batch" required placeholder="e.g. B1-2026"><small class="muted">Your SPES ID will be generated after registration.</small>' : ''}
+        ${reg ? '<label>Batch code</label><input name="batch" required placeholder="e.g. B1-2026"><small class="muted">We will send a verification link to your email after registration.</small>' : ''}
         ${reg || adm ? '' : '<p style="margin:.6rem 0 0;text-align:right"><button type="button" class="link" data-act="mode" data-m="forgot">Forgot password?</button></p>'}<button class="btn" type="submit" style="width:100%">${reg ? 'Create account' : 'Log in as ' + (adm ? 'Admin' : 'User')}</button>
         ${adm ? '' : `<div class="or"><span>or</span></div><button type="button" class="gbtn" data-act="google">${this.GOOGLE_G}${reg ? 'Sign up with Google' : 'Continue with Google'}</button>`}
         ${reg || adm ? '' : '<p class="muted">New beneficiary? <button type="button" class="link" data-act="mode" data-m="register">Register</button></p>'}
@@ -76,7 +77,7 @@ SPES.View = {
 
   forgot(m, gReset, lampOn) {
     if (gReset) {
-      return `<div class="auth ${lampOn ? 'lamp-on' : ''}">${this.bgfx()}${this.lamp(lampOn)}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Your Google account is verified. You can now create a new password.</p></section>
+      return `<div class="auth ${lampOn ? 'lamp-on' : ''}">${this.bgfx()}${this.lamp(lampOn)}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Your account is verified. You can now create a new password.</p></section>
         <form class="panel" data-form="google_reset">${this.back('mode', 'Back to log in', 'login')}<h2>Create new password</h2>
           <span class="portal-tag">Verified: ${this.esc(gReset.email || gReset.username)}</span>
           ${this.msg(m)}
@@ -84,14 +85,13 @@ SPES.View = {
           <label>Confirm new password</label><input name="password2" type="password" required minlength="6" autocomplete="new-password">
           <button class="btn" type="submit" style="width:100%">Save new password</button></form></div>`;
     }
-    return `<div class="auth ${lampOn ? 'lamp-on' : ''}">${this.bgfx()}${this.lamp(lampOn)}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Signed up with Google? Authenticate with Google first before creating a new password.</p></section>
-      <form class="panel" data-form="forgot">${this.back('mode', 'Back to log in', 'login')}<h2>Forgot password</h2>${this.msg(m)}
-        <p class="muted" style="margin:.2rem 0 .7rem">Google-linked accounts must verify with Google first:</p>
-        <button type="button" class="gbtn" data-act="google_reset_start">${this.GOOGLE_G}Verify with Google</button>
-        <div class="or"><span>or username &amp; batch code</span></div>
-        <label>Username</label><input name="username" required><label>Batch code</label><input name="batch" required>
-        <label>New password</label><input name="password" type="password" required minlength="6" autocomplete="new-password">
-        <button class="btn" type="submit" style="width:100%">Reset password</button></form></div>`;
+    return `<div class="auth ${lampOn ? 'lamp-on' : ''}">${this.bgfx()}${this.lamp(lampOn)}<section class="hero"><img src="img/logo.png" alt="SPES logo" style="width:120px;margin-bottom:1rem"><b>SPES<i>Hub</i></b><p>Authenticate via your registered email or Google account before creating a new password.</p></section>
+      <form class="panel" data-form="forgot_email">${this.back('mode', 'Back to log in', 'login')}<h2>Forgot password</h2>${this.msg(m)}
+        <p class="muted" style="margin:.2rem 0 .7rem">Enter your registered email address or username and we'll send you an authenticated reset link:</p>
+        <label>Email address or Username</label><input name="identifier" required placeholder="you@gmail.com or username">
+        <button class="btn" type="submit" style="width:100%">Send verification email</button>
+        <div class="or"><span>or verify with Google</span></div>
+        <button type="button" class="gbtn" data-act="google_reset_start">${this.GOOGLE_G}Verify with Google</button></form></div>`;
   },
   privacyConsentModal() {
     const shield = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>';

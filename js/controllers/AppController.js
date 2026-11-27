@@ -178,17 +178,24 @@ SPES.App = {
     this.s.as = this.portal();
     window.addEventListener('hashchange', () => { this.s.as = this.portal(); this.s.mode = 'login'; this.render(); });
 
-    // Handle Google OAuth redirect (#access_token=... or #error_description=...)
+    // Handle Supabase Auth redirects (Google OAuth, Email Verification, Password Reset)
     if (this.portal() === 'user' && (location.hash.includes('access_token=') || location.hash.includes('error'))) {
       const hp = new URLSearchParams(location.hash.slice(1));
       const qp = new URLSearchParams(location.search);
-      const isReset = qp.get('flow') === 'reset';
+      const flow = qp.get('flow') || '';
+      const hashType = hp.get('type') || '';
+      const isVerify = flow === 'verify' || hashType === 'signup' || hashType === 'magiclink';
+      const isReset = flow === 'reset' || flow === 'email_reset' || hashType === 'recovery';
       history.replaceState(null, '', location.pathname);
       if (hp.get('error_description') || hp.get('error')) {
-        this.flash(hp.get('error_description') || 'Google sign-in was cancelled.');
+        this.flash(hp.get('error_description') || 'Authentication link expired or was cancelled.');
         if (isReset) this.s.mode = 'forgot';
+      } else if (isVerify) {
+        this.s.unverifiedEmail = null;
+        this.flash('Email verified! Your email address is now confirmed. Once the administrator approves your registration, you can log in.', true);
+        this.s.mode = 'login';
       } else if (hp.get('access_token')) {
-        SPES.View.mount(`<div class="fx"><div class="fx-in"><img src="img/logo.png" alt=""><b>${isReset ? 'Verifying Google account' : 'Signing in with Google'}</b><span>Please wait...</span><i class="fx-bar"></i></div></div>`);
+        SPES.View.mount(`<div class="fx"><div class="fx-in"><img src="img/logo.png" alt=""><b>${isReset ? 'Verifying your account' : 'Signing in with Google'}</b><span>Please wait...</span><i class="fx-bar"></i></div></div>`);
         const accessToken = hp.get('access_token');
         if (isReset) {
           const vr = await SPES.API.post('/api/auth/google/verify-reset', { accessToken });
@@ -470,6 +477,15 @@ SPES.App = {
       location.href = '/api/auth/google?flow=reset';
       return;
     }
+    else if (a === 'resend_verify') {
+      this.setBusy(btn, true);
+      const r = await SPES.API.post('/api/auth/resend-verification', { email: d.email || s.unverifiedEmail });
+      this.setBusy(btn, false);
+      if (r.ok) this.flash('Verification email resent! Please check your inbox and spam folder.', true);
+      else this.flash(r.error);
+      this.render();
+      return;
+    }
     else if (a === 'pis_cancel') {
       s.mode = this.pendingReg && this.pendingReg.kind === 'google_complete' ? 'google_setup' : 'register';
       this.pendingReg = null;
@@ -662,8 +678,11 @@ SPES.App = {
     try {
       if (form === 'login') {
         const r = await M.API.post('/api/login', { username: f.username.trim(), password: f.password, portal: s.as });
-        if (!r.ok) this.flash(r.error);
-        else {
+        if (!r.ok) {
+          s.unverifiedEmail = r.data && r.data.needsVerification ? (r.data.email || f.username.trim()) : null;
+          this.flash(r.error);
+        } else {
+          s.unverifiedEmail = null;
           await M.API.bootstrap();
           this._syncAt = Date.now();
           s.tab = null; this.anim = true;
@@ -672,7 +691,9 @@ SPES.App = {
         }
       } else if (form === 'register') {
         if (!f.gender) { this.flash('Please select your gender.'); this.render(); return; }
-        this.pendingReg = { kind: 'register', payload: { ...f, username: f.username.trim(), name: f.name.trim(), privacyAccepted: true } };
+        const email = (f.email || '').trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { this.flash('Please enter a valid email address.'); this.render(); return; }
+        this.pendingReg = { kind: 'register', payload: { ...f, email, username: f.username.trim(), name: f.name.trim(), privacyAccepted: true } };
         s.mode = 'pis_form'; this.render(); window.scrollTo({ top: 0, behavior: 'smooth' }); return;
       } else if (form === 'pis_submit') {
         if (!this.pendingReg) { s.mode = 'register'; this.render(); return; }
@@ -681,15 +702,22 @@ SPES.App = {
         const photoFile = el.pisPhoto && el.pisPhoto.files && el.pisPhoto.files[0];
         const pisPhoto = photoFile ? await this.readImage(photoFile, 480) : null;
         const endpoint = this.pendingReg.kind === 'google_complete' ? '/api/auth/google/complete' : '/api/register';
+        const regEmail = this.pendingReg.payload.email || '';
         const r = await M.API.post(endpoint, { ...this.pendingReg.payload, pis, pisPhoto, privacyAccepted: true });
         if (!r.ok) { this.flash(r.error); this.render(); return; }
         const wasGoogle = this.pendingReg.kind === 'google_complete';
         this.pendingReg = null;
         if (wasGoogle) { s.googleToken = null; s.googleData = null; }
-        this.flash(`Account & Personal Information submitted (SPES ID: ${r.data.spesId}). Please wait for the administrator to approve it before you log in.`, true);
+        this.flash(wasGoogle
+          ? `Account & Personal Information submitted (SPES ID: ${r.data.spesId}). Please wait for the administrator to approve it before you log in.`
+          : `Account created (SPES ID: ${r.data.spesId})! A verification link has been sent to ${regEmail}. Please verify your email and wait for administrator approval.`, true);
         s.mode = 'login'; s.as = this.portal();
-        this.transition('Registration submitted!', 'Waiting for administrator approval', false);
+        this.transition(wasGoogle ? 'Registration submitted!' : 'Check your email!', wasGoogle ? 'Waiting for administrator approval' : 'Verify your email, then wait for approval', false);
         return;
+      } else if (form === 'forgot_email') {
+        const r = await M.API.post('/api/auth/forgot-email', { identifier: (f.identifier || '').trim() });
+        if (!r.ok) this.flash(r.error);
+        else this.flash(r.data.message || 'Password reset verification email sent! Check your inbox.', true);
       } else if (form === 'forgot') {
         const r = await M.API.post('/api/forgot', { username: f.username.trim(), batch: f.batch, password: f.password });
         if (!r.ok) this.flash(r.error);
@@ -825,7 +853,14 @@ SPES.App = {
         const r = await M.API.post('/api/announcements', { title: f.title.trim(), body: f.body.trim(), to: f.to, date: f.date });
         if (r.ok) {
           SPES.DB.set('ann', [r.data.announcement, ...SPES.DB.get('ann', [])]);
-          this.flash('Announcement sent.', true);
+          const es = r.data.emailStats;
+          const targetTxt = f.to === 'all' ? 'all batches' : f.to;
+          const emailNote = es && es.sent > 0
+            ? ` Emailed ${es.sent} beneficiary(ies) in ${targetTxt}.`
+            : es && !es.configured
+              ? ' (In-app sent; set up Gmail/SMTP env vars to also email beneficiaries.)'
+              : '';
+          this.flash('Announcement sent.' + emailNote, true);
           this.syncBg(true);
         } else this.flash(r.error);
       } else if (form === 'event') {
@@ -890,7 +925,7 @@ SPES.App = {
       if (s.mode === 'pis_form' && SPES.PisView) {
         V.mount(SPES.PisView.form((this.pendingReg && this.pendingReg.payload) || {}, s.m));
       } else {
-        V.mount(V.auth(s.mode, s.m, s.as, s.googleData, s.googleReset, s.lampOn) + (s.privacyModal ? V.privacyConsentModal() : ''));
+        V.mount(V.auth(s.mode, s.m, s.as, s.googleData, s.googleReset, s.lampOn, s.unverifiedEmail) + (s.privacyModal ? V.privacyConsentModal() : ''));
       }
     } else {
       const tabs = this.TABS[u.role];

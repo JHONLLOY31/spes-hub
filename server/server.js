@@ -7,6 +7,7 @@ const {
   sb, sbAuth, emailFor, sha, hashSecret, verifySecret,
   nowInTz, photoUrl, extractStoragePath, uploadDataUrl, seedDemo
 } = require('./supabase');
+const mailer = require('./mailer');
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ljilybiftodjlicnrxta.supabase.co';
 
 const ROOT = path.join(__dirname, '..');
@@ -16,6 +17,15 @@ const SECURE = process.env.SECURE_COOKIES === '1' || process.env.RENDER === 'tru
 const WEEK_SEC = 7 * 24 * 3600;
 
 const str = (v, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+const cleanEmail = v => {
+  const e = str(v, 120).toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : '';
+};
+const appOrigin = req => {
+  const proto = String((req && req.headers && req.headers['x-forwarded-proto']) || (SECURE ? 'https' : 'http')).split(',')[0].trim();
+  const host = (req && req.headers && req.headers.host) || 'spes-hub.vercel.app';
+  return `${proto}://${host}`;
+};
 const fail = (status, msg) => { throw { status, msg }; };
 
 const SLOTS = {
@@ -39,6 +49,7 @@ const mapProfile = p => ({
   name: p.name,
   gender: p.gender || null,
   username: p.username,
+  email: p.email || null,
   role: p.role,
   batch: p.batch_code || null,
   status: p.status,
@@ -162,14 +173,17 @@ async function preparePis(uid, body) {
   return { avatarPath, pis, settings };
 }
 
-route('POST', '/api/register', undefined, async ({ body }) => {
+const emailCooldown = new Map();
+
+route('POST', '/api/register', undefined, async ({ req, body }) => {
   const name = str(body.name, 80);
   const username = str(body.username, 30);
+  const email = cleanEmail(body.email);
   const gender = body.gender;
   const code = str(body.batch, 40).toUpperCase();
   const password = typeof body.password === 'string' ? body.password : '';
-  if (!name || !['Male', 'Female'].includes(gender) || !/^[A-Za-z0-9_.]{3,30}$/.test(username) || password.length < 6 || password.length > 100) {
-    fail(400, 'Fill in every field. Username: 3 to 30 letters or numbers. Password: at least 6 characters.');
+  if (!name || !['Male', 'Female'].includes(gender) || !/^[A-Za-z0-9_.]{3,30}$/.test(username) || !email || password.length < 6 || password.length > 100) {
+    fail(400, 'Fill in every field with a valid email. Username: 3 to 30 letters or numbers. Password: at least 6 characters.');
   }
   const { data: batch } = await sb.from('batches').select('*').eq('code', code).maybeSingle();
   if (!batch) fail(400, 'Batch code not found. Ask your administrator for the code.');
@@ -177,23 +191,51 @@ route('POST', '/api/register', undefined, async ({ body }) => {
   const { data: existing } = await sb.from('profiles').select('id').ilike('username', username).maybeSingle();
   if (existing) fail(409, 'That username is already taken.');
 
+  const { data: existingEmail } = await sb.from('profiles').select('id').ilike('email', email).maybeSingle();
+  if (existingEmail) fail(409, 'That email address is already registered.');
+
   // Generate next SPES ID for this batch
   const { data: members } = await sb.from('profiles').select('spes_id').eq('batch_code', batch.code).eq('role', 'beneficiary');
   const maxSeq = (members || []).reduce((m, r) => Math.max(m, Number(String(r.spes_id || '').split('-').pop()) || 0), 0);
   const prefix = ((batch.name || '').match(/B[12]/i) || [batch.code.startsWith('B2-') ? 'B2' : 'B1'])[0].toUpperCase();
   const spesId = `${prefix}-${batch.year}-${String(maxSeq + 1).padStart(4, '0')}`;
 
-  const created = await sb.auth.admin.createUser({
-    email: emailFor(username),
-    password,
-    email_confirm: true
-  });
-  if (created.error) fail(409, created.error.message || 'Could not create account.');
+  const redirectTo = `${appOrigin(req)}/index.html?flow=verify`;
+  let uid = null;
+  let verifyUrl = null;
+  let usedCustomMailer = false;
 
-  const uid = created.data.user.id;
+  if (mailer.isMailerConfigured()) {
+    const gen = await sb.auth.admin.generateLink({
+      type: 'signup',
+      email,
+      password,
+      options: { redirectTo }
+    });
+    if (gen.error || !gen.data || !gen.data.user) {
+      fail(409, (gen.error && gen.error.message) || 'Could not create account. That email may already be in use.');
+    }
+    uid = gen.data.user.id;
+    verifyUrl = gen.data.properties && gen.data.properties.action_link;
+    usedCustomMailer = true;
+  } else {
+    const created = await sbAuth.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: redirectTo }
+    });
+    if (created.error || !created.data || !created.data.user) {
+      fail(409, (created.error && created.error.message) || 'Could not create account.');
+    }
+    if (Array.isArray(created.data.user.identities) && created.data.user.identities.length === 0) {
+      fail(409, 'That email address is already registered.');
+    }
+    uid = created.data.user.id;
+  }
+
   const { avatarPath, pis, settings } = await preparePis(uid, body);
   const { error: profErr } = await sb.from('profiles').insert({
-    id: uid, username, spes_id: spesId, name, gender,
+    id: uid, username, email, spes_id: spesId, name, gender,
     role: 'beneficiary', batch_code: batch.code, status: 'pending',
     start_date: nowInTz().date,
     avatar_path: avatarPath,
@@ -204,12 +246,46 @@ route('POST', '/api/register', undefined, async ({ body }) => {
     await sb.auth.admin.deleteUser(uid);
     fail(500, 'Could not save profile: ' + profErr.message);
   }
-  await pushNotif('staff', `${name} registered and is waiting for approval`, 'approval');
-  return [201, { ok: true, spesId }];
+  if (usedCustomMailer && verifyUrl) {
+    await mailer.sendVerificationEmail({ to: email, name, spesId, verifyUrl });
+  }
+  await pushNotif('staff', `${name} registered (${email}) and is waiting for approval`, 'approval');
+  return [201, { ok: true, spesId, email, verificationSent: true }];
+});
+
+route('POST', '/api/auth/resend-verification', undefined, async ({ req, body }) => {
+  const raw = str(body.email || body.identifier, 120).toLowerCase();
+  if (!raw) fail(400, 'Enter your email address or username.');
+  const now = Date.now();
+  if ((emailCooldown.get('verify:' + raw) || 0) > now) {
+    fail(429, 'Please wait 1 minute before requesting another verification email.');
+  }
+  emailCooldown.set('verify:' + raw, now + 60000);
+
+  const q = raw.includes('@')
+    ? sb.from('profiles').select('id, name, email, spes_id').ilike('email', raw).maybeSingle()
+    : sb.from('profiles').select('id, name, email, spes_id').ilike('username', raw).maybeSingle();
+  const { data: prof } = await q;
+  if (!prof || !prof.email) return [200, { ok: true }];
+
+  const { data: authInfo } = await sb.auth.admin.getUserById(prof.id);
+  if (authInfo && authInfo.user && authInfo.user.email_confirmed_at) {
+    fail(400, 'Your email is already verified. Once the administrator approves your account, you can log in.');
+  }
+  const redirectTo = `${appOrigin(req)}/index.html?flow=verify`;
+  if (mailer.isMailerConfigured()) {
+    const gen = await sb.auth.admin.generateLink({ type: 'magiclink', email: prof.email, options: { redirectTo } });
+    if (gen.data && gen.data.properties && gen.data.properties.action_link) {
+      await mailer.sendVerificationEmail({ to: prof.email, name: prof.name, spesId: prof.spes_id || '', verifyUrl: gen.data.properties.action_link });
+    }
+  } else {
+    await sbAuth.auth.resend({ type: 'signup', email: prof.email, options: { emailRedirectTo: redirectTo } });
+  }
+  return [200, { ok: true }];
 });
 
 route('POST', '/api/login', undefined, async ({ req, body }) => {
-  const username = str(body.username, 60);
+  const username = str(body.username, 120);
   const password = typeof body.password === 'string' ? body.password : '';
   const portal = body.portal === 'admin' ? 'admin' : 'user';
   const ip = String(req.headers['x-forwarded-for'] || (req.socket && req.socket.remoteAddress) || 'unknown').split(',')[0].trim();
@@ -217,12 +293,23 @@ route('POST', '/api/login', undefined, async ({ req, body }) => {
   const f = fails.get(key);
   if (f && f.n >= 5 && f.until > Date.now()) fail(429, 'Too many attempts. Please try again in a few minutes.');
 
-  const { data: prof } = await sb.from('profiles').select('*').ilike('username', username).maybeSingle();
-  const authRes = prof ? await sbAuth.auth.signInWithPassword({ email: emailFor(prof.username), password }) : { error: { message: 'nope' } };
+  const isEmailInput = username.includes('@');
+  const { data: prof } = isEmailInput
+    ? await sb.from('profiles').select('*').ilike('email', username).maybeSingle()
+    : await sb.from('profiles').select('*').ilike('username', username).maybeSingle();
+  const authEmail = prof ? (prof.email || emailFor(prof.username)) : null;
+  const authRes = authEmail ? await sbAuth.auth.signInWithPassword({ email: authEmail, password }) : { error: { message: 'nope' } };
+  if (prof && authRes.error && /not confirmed/i.test(authRes.error.message || '')) {
+    return [403, {
+      error: 'Please verify your email address first. Check your inbox (and spam folder) for the confirmation link.',
+      needsVerification: true,
+      email: prof.email || ''
+    }];
+  }
   if (!prof || authRes.error) {
     if (fails.size > 5000) fails.clear();
     fails.set(key, { n: (f && f.until > Date.now() ? f.n : 0) + 1, until: Date.now() + 600000 });
-    fail(401, 'Wrong username or password.');
+    fail(401, 'Wrong username/email or password.');
   }
   if ((prof.role !== 'beneficiary') !== (portal === 'admin')) {
     fail(403, prof.role === 'beneficiary'
@@ -246,22 +333,46 @@ route('POST', '/api/logout', undefined, async ({ req, user }) => {
   return [200, { ok: true }, { 'Set-Cookie': `sid=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${SECURE ? '; Secure' : ''}` }];
 });
 
-route('POST', '/api/forgot', undefined, async ({ body }) => {
-  const username = str(body.username, 60);
-  const batch = str(body.batch, 40).toUpperCase();
-  const password = typeof body.password === 'string' ? body.password : '';
-  if (password.length < 6 || password.length > 100) fail(400, 'Password needs at least 6 characters.');
-  const { data: prof } = await sb.from('profiles').select('*').ilike('username', username).eq('role', 'beneficiary').maybeSingle();
-  if (!prof || prof.batch_code !== batch) fail(400, 'Username and batch code do not match.');
-  // Google-linked accounts MUST authenticate with Google first before setting a new password
-  const { data: authInfo } = await sb.auth.admin.getUserById(prof.id);
-  const u = authInfo && authInfo.user;
-  const providers = (u && u.app_metadata && u.app_metadata.providers) || [];
-  const isGoogle = providers.includes('google') || (u && u.email && !u.email.endsWith('@spes-hub.local'));
-  if (isGoogle) fail(403, 'This account uses Google Sign-In. Please click "Verify with Google" first to authenticate before creating a new password.');
-  const upd = await sb.auth.admin.updateUserById(prof.id, { password });
-  if (upd.error) fail(500, 'Could not update password.');
-  return [200, { ok: true }];
+route('POST', '/api/forgot', undefined, async () => {
+  fail(403, 'Password reset now requires email or Google authentication. Use "Send verification email" or "Verify with Google".');
+});
+
+route('POST', '/api/auth/forgot-email', undefined, async ({ req, body }) => {
+  const raw = str(body.identifier || body.email || body.username, 120).toLowerCase();
+  if (!raw) fail(400, 'Enter your registered email address or username.');
+  const ip = String(req.headers['x-forwarded-for'] || (req.socket && req.socket.remoteAddress) || 'unknown').split(',')[0].trim();
+  const cKey = `reset:${ip}:${raw}`;
+  const now = Date.now();
+  if ((emailCooldown.get(cKey) || 0) > now) {
+    fail(429, 'Please wait 1 minute before requesting another password reset email.');
+  }
+  emailCooldown.set(cKey, now + 60000);
+
+  const q = raw.includes('@')
+    ? sb.from('profiles').select('id, name, username, email, role').ilike('email', raw).maybeSingle()
+    : sb.from('profiles').select('id, name, username, email, role').ilike('username', raw).maybeSingle();
+  const { data: prof } = await q;
+
+  if (prof && prof.role === 'beneficiary') {
+    let targetEmail = prof.email;
+    if (!targetEmail) {
+      const { data: authInfo } = await sb.auth.admin.getUserById(prof.id);
+      const uEmail = authInfo && authInfo.user && authInfo.user.email;
+      if (uEmail && !uEmail.endsWith('@spes-hub.local')) targetEmail = uEmail.toLowerCase();
+    }
+    if (targetEmail) {
+      const redirectTo = `${appOrigin(req)}/index.html?flow=email_reset`;
+      if (mailer.isMailerConfigured()) {
+        const gen = await sb.auth.admin.generateLink({ type: 'recovery', email: targetEmail, options: { redirectTo } });
+        if (gen.data && gen.data.properties && gen.data.properties.action_link) {
+          await mailer.sendPasswordResetEmail({ to: targetEmail, name: prof.name, resetUrl: gen.data.properties.action_link });
+        }
+      } else {
+        await sbAuth.auth.resetPasswordForEmail(targetEmail, { redirectTo });
+      }
+    }
+  }
+  return [200, { ok: true, message: 'If an account matches that email or username, a password reset verification link has been sent to its registered email address.' }];
 });
 
 // ---- Google OAuth password-reset verification ----
@@ -348,7 +459,7 @@ route('POST', '/api/auth/google/complete', undefined, async ({ body }) => {
 
   const { avatarPath, pis, settings } = await preparePis(gUser.id, body);
   const { error: profErr } = await sb.from('profiles').insert({
-    id: gUser.id, username, spes_id: spesId, name, gender,
+    id: gUser.id, username, email: cleanEmail(gUser.email) || null, spes_id: spesId, name, gender,
     role: 'beneficiary', batch_code: batch.code, status: 'pending',
     start_date: nowInTz().date,
     avatar_path: avatarPath,
@@ -499,7 +610,7 @@ route('GET', '/api/users', ['admin', 'head'], async ({ url }) => {
   return [200, { users: (data || []).map(mapProfile) }];
 });
 
-route('PATCH', '/api/users/:id/status', ['admin'], async ({ params, body }) => {
+route('PATCH', '/api/users/:id/status', ['admin'], async ({ req, params, body }) => {
   if (!['pending', 'approved', 'rejected'].includes(body.status)) fail(400, 'Status must be pending, approved, or rejected.');
   const { data, error } = await sb.from('profiles')
     .update({ status: body.status })
@@ -509,7 +620,23 @@ route('PATCH', '/api/users/:id/status', ['admin'], async ({ params, body }) => {
     .maybeSingle();
   if (error || !data) fail(404, 'Beneficiary not found.');
   if (body.status === 'approved') await pushNotif(data.id, 'Your account was approved. Welcome to SPES Hub!', 'approval');
-  return [200, { ok: true, user: mapProfile(data) }];
+
+  let emailSent = false;
+  if (body.status === 'approved' || body.status === 'rejected') {
+    let targetEmail = data.email;
+    if (!targetEmail) {
+      const { data: authInfo } = await sb.auth.admin.getUserById(data.id);
+      const uEmail = authInfo && authInfo.user && authInfo.user.email;
+      if (uEmail && !uEmail.endsWith('@spes-hub.local')) targetEmail = uEmail.toLowerCase();
+    }
+    if (targetEmail) {
+      const res = body.status === 'approved'
+        ? await mailer.sendApprovalEmail({ to: targetEmail, name: data.name, spesId: data.spes_id, batch: data.batch_code, loginUrl: `${appOrigin(req)}/` })
+        : await mailer.sendDeclinedEmail({ to: targetEmail, name: data.name, batch: data.batch_code });
+      emailSent = !!(res && res.ok);
+    }
+  }
+  return [200, { ok: true, user: mapProfile(data), emailSent, mailerConfigured: mailer.isMailerConfigured() }];
 });
 
 route('DELETE', '/api/users/:id', ['head'], async ({ params }) => {
@@ -560,7 +687,7 @@ route('POST', '/api/profile/password', 'any', async ({ user, body }) => {
   const cur = typeof body.cur === 'string' ? body.cur : '';
   const next = typeof body.next === 'string' ? body.next : '';
   if (next.length < 6 || next.length > 100) fail(400, 'New password needs at least 6 characters.');
-  const check = await sbAuth.auth.signInWithPassword({ email: emailFor(user.username), password: cur });
+  const check = await sbAuth.auth.signInWithPassword({ email: user.email || emailFor(user.username), password: cur });
   if (check.error) fail(401, 'Your current password is not correct.');
   const upd = await sb.auth.admin.updateUserById(user.id, { password: next });
   if (upd.error) fail(500, 'Could not update password.');
@@ -881,7 +1008,7 @@ route('DELETE', '/api/events/:id', ['admin'], async ({ params }) => {
   return [200, { ok: true }];
 });
 
-route('POST', '/api/announcements', ['admin'], async ({ body }) => {
+route('POST', '/api/announcements', ['admin'], async ({ req, body }) => {
   const title = str(body.title, 120);
   const text = str(body.body, 2000);
   const to = body.to === 'all' ? 'all' : 'batch:' + str(body.to, 40);
@@ -894,7 +1021,29 @@ route('POST', '/api/announcements', ['admin'], async ({ body }) => {
     await sb.from('events').insert({ title, date, type: 'Special event' });
     await pushNotif(to, `New event: ${title} on ${date}`, 'event');
   }
-  return [201, { announcement: mapAnn(data) }];
+
+  // Send email announcement ONLY to approved beneficiaries in the targeted batch (or all batches if to === 'all')
+  let q = sb.from('profiles')
+    .select('name, email, batch_code')
+    .eq('role', 'beneficiary')
+    .eq('status', 'approved')
+    .not('email', 'is', null);
+  let batchLabel = 'All Batches';
+  if (to.startsWith('batch:')) {
+    const batchCode = to.slice(6);
+    batchLabel = batchCode;
+    q = q.eq('batch_code', batchCode);
+  }
+  const { data: recipients } = await q;
+  const emailStats = await mailer.sendAnnouncementEmails({
+    recipients: recipients || [],
+    title,
+    body: text,
+    batchLabel,
+    eventDate: date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '',
+    portalUrl: `${appOrigin(req)}/`
+  });
+  return [201, { announcement: mapAnn(data), emailStats }];
 });
 
 // ---- Notifications, Feedback, Presence ----
@@ -1063,7 +1212,7 @@ route('POST', '/api/answerkey', ['head'], async ({ user, body }) => {
   if (action === 'set' && stored) fail(409, 'A password is already set.');
   if (action === 'change' && (!stored || !verifySecret(body.cur || '', stored))) { miss(); fail(401, 'The current password is wrong.'); }
   if (action === 'reset') {
-    const check = await sbAuth.auth.signInWithPassword({ email: emailFor(user.username), password: body.acct || '' });
+    const check = await sbAuth.auth.signInWithPassword({ email: user.email || emailFor(user.username), password: body.acct || '' });
     if (check.error) { miss(); fail(401, 'Your administrator account password is wrong.'); }
   }
   await sb.from('app_settings').upsert({
